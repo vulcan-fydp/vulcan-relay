@@ -21,6 +21,8 @@ use std::num::{NonZeroU32, NonZeroU8};
 use std::sync::{Arc, Weak};
 use tokio::sync::{broadcast, Mutex};
 
+type RoomId = String;
+
 #[derive(Debug, Clone)]
 pub struct InvalidSessionError(pub String);
 impl fmt::Display for InvalidSessionError {
@@ -54,8 +56,6 @@ fn media_codecs() -> Vec<RtpCodecCapability> {
         },
     ]
 }
-
-type RoomId = String;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub enum Role {

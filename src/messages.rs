@@ -14,28 +14,22 @@ use mediasoup::worker::WorkerSettings;
 use mediasoup::worker_manager::WorkerManager;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct TransportOptions {
-    id: TransportId,
-    dtls_parameters: DtlsParameters,
-    ice_candidates: Vec<IceCandidate>,
-    ice_parameters: IceParameters,
+pub struct TransportOptions {
+    pub id: TransportId,
+    pub dtls_parameters: DtlsParameters,
+    pub ice_candidates: Vec<IceCandidate>,
+    pub ice_parameters: IceParameters,
 }
 
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ServerInitMessage {
-    consumer_transport_options: TransportOptions,
-    producer_transport_options: TransportOptions,
-    router_rtp_capabilities: RtpCapabilitiesFinalized,
-}
-
-
-#[derive(Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone)]
 #[serde(tag = "action")]
 pub enum ServerMessage {
-    Init(ServerInitMessage),
+    Init {
+        transport_options: TransportOptions,
+        router_rtp_capabilities: RtpCapabilitiesFinalized,
+    },
     ConnectedProducerTransport,
     #[serde(rename_all = "camelCase")]
     Produced {
