@@ -1,16 +1,16 @@
+use crate::relay_server::{InvalidSessionError, RelayServer, SessionToken};
 use async_graphql::http::{playground_source, GraphQLPlaygroundConfig};
 use async_graphql::{scalar, Context, Data, EmptyMutation, Object, Schema, Subscription};
 use async_graphql_warp::{graphql_subscription_with_data, Response};
 use futures::{stream, Stream};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
-use warp::{http::Response as HttpResponse, Filter};
-mod messages;
-mod relay_server;
-mod signal_schema;
-use crate::relay_server::{InvalidSessionError, RelayServer, SessionToken};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use warp::{http::Response as HttpResponse, Filter};
+
+mod relay_server;
+mod signal_schema;
 
 #[tokio::main]
 async fn main() {

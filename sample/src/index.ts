@@ -243,7 +243,11 @@ async function init() {
 const wsLink = new WebSocketLink({
 	uri: 'ws://192.168.140.136:8080',
 	options: {
-		reconnect: true
+		reconnect: true,
+		connectionParams: {
+			"roomId": "ayush",
+			"role": "WebClient"
+		}
 	}
 });
 
@@ -254,7 +258,10 @@ const client = new ApolloClient({
 
 const dab = gql`
 query {
-	test
+	init {
+		transportOptions,
+		routerRtpCapabilities
+	}
 }
 `;
 

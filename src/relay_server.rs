@@ -1,5 +1,4 @@
-use crate::messages::ServerMessage;
-use mediasoup::consumer::{Consumer, ConsumerId, ConsumerOptions};
+use mediasoup::consumer::{Consumer, ConsumerId};
 use mediasoup::data_structures::{DtlsParameters, IceCandidate, IceParameters, TransportListenIp};
 use mediasoup::producer::{Producer, ProducerId, ProducerOptions};
 use mediasoup::router::{Router, RouterOptions};
@@ -20,6 +19,7 @@ use std::fmt;
 use std::num::{NonZeroU32, NonZeroU8};
 use std::sync::{Arc, Weak};
 use tokio::sync::{broadcast, Mutex};
+use crate::signal_schema::ConsumeParameters;
 
 type RoomId = String;
 
@@ -75,7 +75,7 @@ pub struct Room {
     pub sessions: Vec<Arc<Mutex<Session>>>,
     pub router: Router,
 
-    pub room_tx: broadcast::Sender<ServerMessage>,
+    pub consume_tx: broadcast::Sender<ConsumeParameters>,
 }
 
 pub struct Session {
@@ -86,7 +86,6 @@ pub struct Session {
 
     pub room: Weak<Mutex<Room>>,
 }
-impl Session {}
 
 pub struct RelayServer {
     worker_manager: WorkerManager,
@@ -108,7 +107,7 @@ impl RelayServer {
         }
     }
 
-    pub async fn get_room(&mut self, room_id: RoomId) -> Arc<Mutex<Room>> {
+    pub async fn get_or_create_room(&mut self, room_id: RoomId) -> Arc<Mutex<Room>> {
         match self.rooms.entry(room_id) {
             Entry::Occupied(o) => o.into_mut(),
             Entry::Vacant(v) => {
@@ -122,7 +121,7 @@ impl RelayServer {
                     host: None,
                     sessions: vec![],
                     router: router,
-                    room_tx: tx,
+                    consume_tx: tx,
                 };
                 v.insert(Arc::new(Mutex::new(room)))
             }
@@ -134,7 +133,7 @@ impl RelayServer {
         &mut self,
         token: SessionToken,
     ) -> Result<Arc<Mutex<Session>>, InvalidSessionError> {
-        let room_ptr = self.get_room(token.room_id).await;
+        let room_ptr = self.get_or_create_room(token.room_id).await;
         let transport_options =
             WebRtcTransportOptions::new(TransportListenIps::new(TransportListenIp {
                 ip: "0.0.0.0".parse().unwrap(),
