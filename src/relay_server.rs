@@ -88,6 +88,7 @@ pub struct Session {
 }
 
 pub struct RelayServer {
+    pub local_pool: tokio_local::LocalPoolHandle,
     worker_manager: WorkerManager,
     worker: Worker,
     rooms: HashMap<RoomId, Arc<Mutex<Room>>>,
@@ -101,6 +102,7 @@ impl RelayServer {
             .await
             .unwrap();
         Self {
+            local_pool: tokio_local::new_local_pool(2),
             worker_manager: worker_manager,
             worker: worker,
             rooms: HashMap::new(),

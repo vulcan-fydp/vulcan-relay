@@ -183,25 +183,31 @@ impl MutationRoot {
         &self,
         ctx: &Context<'_>,
         produce_params: ProduceParameters,
-    ) -> Result<bool> {
+    ) -> Result<ProducerId> {
+        let server = ctx.data_unchecked::<Arc<Mutex<RelayServer>>>().lock().await;
         let mut session = ctx.data_unchecked::<Arc<Mutex<Session>>>().lock().await;
-        let transport = session.transport.clone();
+
         // fucking end me
-        // match transport
-        //     .produce(ProducerOptions::new(
-        //         produce_params.kind.0,
-        //         produce_params.rtp_parameters.0,
-        //     ))
-        //     .await
-        // {
-        //     Ok(producer) => {
-        //         let id = producer.id();
-        //         session.producers.push(producer);
-        //         Ok(ProducerId(id))
-        //     }
-        //     Err(err) => Err(err.into()),
-        // }
-        Ok(true)
+        let transport = session.transport.clone();
+        match server
+            .local_pool
+            .spawn_pinned(|| async move {
+                transport.produce(ProducerOptions::new(
+                    produce_params.kind.0,
+                    produce_params.rtp_parameters.0,
+                )).await
+            })
+            .await
+            .unwrap()
+        {
+            Ok(producer) => {
+                let id = producer.id();
+                session.producers.push(producer);
+                Ok(ProducerId(id))
+            }
+            Err(err) => Err(err.into()),
+        }
+        // TODO actually emit...
     }
 }
 

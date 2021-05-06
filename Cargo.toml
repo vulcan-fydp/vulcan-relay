@@ -24,9 +24,15 @@ async-graphql = "2.8.4"
 async-graphql-warp = "2.8.4"
 
 mediasoup = "0.7.1"
+tokio-local = { path = "tokio-local" }
 
 [dev-dependencies]
 actix = "0.10.0"
 actix-web = { version = "3.3.2", features = ["openssl"] }
 actix-web-actors = "3.0.0"
 openssl = { version = "0.10", features = ["v110"] }
+
+[workspace]
+members = [
+    "tokio-local"
+]
