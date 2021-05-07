@@ -1,97 +1,31 @@
-use mediasoup::consumer::{Consumer, ConsumerId};
-use mediasoup::data_structures::{DtlsParameters, IceCandidate, IceParameters, TransportListenIp};
-use mediasoup::producer::{Producer, ProducerId, ProducerOptions};
-use mediasoup::router::{Router, RouterOptions};
-use mediasoup::rtp_parameters::{
-    MediaKind, MimeTypeAudio, MimeTypeVideo, RtcpFeedback, RtpCapabilities,
-    RtpCapabilitiesFinalized, RtpCodecCapability, RtpCodecParametersParameters, RtpParameters,
-};
-use mediasoup::transport::{Transport, TransportId};
-use mediasoup::webrtc_transport::{
-    TransportListenIps, WebRtcTransport, WebRtcTransportOptions, WebRtcTransportRemoteParameters,
-};
+use std::collections::HashMap;
+use std::error;
+use std::sync::{Arc, Mutex};
+
 use mediasoup::worker::{Worker, WorkerSettings};
 use mediasoup::worker_manager::WorkerManager;
-use serde::{Deserialize, Serialize};
-use std::collections::hash_map::Entry;
-use std::collections::HashMap;
-use std::fmt;
-use std::num::{NonZeroU32, NonZeroU8};
-use std::sync::{Arc, Weak};
-use tokio::sync::{broadcast, Mutex};
-use crate::signal_schema::ConsumeParameters;
 
-type RoomId = String;
+use crate::room::{Room, RoomId};
+use crate::session::{Session, SessionToken};
+
+type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 
 #[derive(Debug, Clone)]
-pub struct InvalidSessionError(pub String);
-impl fmt::Display for InvalidSessionError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-fn media_codecs() -> Vec<RtpCodecCapability> {
-    vec![
-        RtpCodecCapability::Audio {
-            mime_type: MimeTypeAudio::Opus,
-            preferred_payload_type: None,
-            clock_rate: NonZeroU32::new(48000).unwrap(),
-            channels: NonZeroU8::new(2).unwrap(),
-            parameters: RtpCodecParametersParameters::from([("useinbandfec", 1u32.into())]),
-            rtcp_feedback: vec![RtcpFeedback::TransportCc],
-        },
-        RtpCodecCapability::Video {
-            mime_type: MimeTypeVideo::Vp8,
-            preferred_payload_type: None,
-            clock_rate: NonZeroU32::new(90000).unwrap(),
-            parameters: RtpCodecParametersParameters::default(),
-            rtcp_feedback: vec![
-                RtcpFeedback::Nack,
-                RtcpFeedback::NackPli,
-                RtcpFeedback::CcmFir,
-                RtcpFeedback::GoogRemb,
-                RtcpFeedback::TransportCc,
-            ],
-        },
-    ]
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub enum Role {
-    Vulcast,
-    WebClient,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct SessionToken {
-    pub room_id: RoomId,
-    pub role: Role,
-}
-
-pub struct Room {
-    pub host: Option<Arc<Mutex<Session>>>,
-    pub sessions: Vec<Arc<Mutex<Session>>>,
-    pub router: Router,
-
-    pub consume_tx: broadcast::Sender<ConsumeParameters>,
-}
-
-pub struct Session {
-    pub client_rtp_capabilities: Option<RtpCapabilities>,
-    pub transport: WebRtcTransport,
-    pub consumers: HashMap<ConsumerId, Consumer>,
-    pub producers: Vec<Producer>,
-
-    pub room: Weak<Mutex<Room>>,
-}
-
 pub struct RelayServer {
-    pub local_pool: tokio_local::LocalPoolHandle,
+    shared: Arc<Shared>,
+}
+
+#[derive(Debug)]
+struct Shared {
+    state: Mutex<State>,
+
     worker_manager: WorkerManager,
     worker: Worker,
-    rooms: HashMap<RoomId, Arc<Mutex<Room>>>,
+}
+
+#[derive(Debug)]
+struct State {
+    rooms: HashMap<RoomId, Room>,
 }
 
 impl RelayServer {
@@ -102,71 +36,51 @@ impl RelayServer {
             .await
             .unwrap();
         Self {
-            local_pool: tokio_local::new_local_pool(2),
-            worker_manager: worker_manager,
-            worker: worker,
-            rooms: HashMap::new(),
+            shared: Arc::new(Shared {
+                state: Mutex::new(State {
+                    rooms: HashMap::new(),
+                }),
+                worker: worker,
+                worker_manager: worker_manager,
+            }),
         }
     }
 
-    pub async fn get_or_create_room(&mut self, room_id: RoomId) -> Arc<Mutex<Room>> {
-        match self.rooms.entry(room_id) {
-            Entry::Occupied(o) => o.into_mut(),
-            Entry::Vacant(v) => {
-                let router = self
-                    .worker
-                    .create_router(RouterOptions::new(media_codecs()))
-                    .await
-                    .unwrap();
-                let (tx, _) = broadcast::channel(16);
-                let room = Room {
-                    host: None,
-                    sessions: vec![],
-                    router: router,
-                    consume_tx: tx,
-                };
-                v.insert(Arc::new(Mutex::new(room)))
+    pub async fn get_or_create_room(&self, room_id: RoomId) -> Room {
+        // https://github.com/rust-lang/rust/issues/57478
+        {
+            let mut state = self.shared.state.lock().unwrap();
+            if let Some(room) = state.rooms.get_mut(&room_id) {
+                return room.clone();
             }
         }
-        .clone()
+        let room = Room::new(room_id.clone(), self.shared.worker.clone()).await;
+        log::info!("created new room {}", &room_id);
+        let mut state = self.shared.state.lock().unwrap();
+        state.rooms.insert(room_id, room.clone());
+        room
     }
 
-    pub async fn new_session(
-        &mut self,
-        token: SessionToken,
-    ) -> Result<Arc<Mutex<Session>>, InvalidSessionError> {
-        let room_ptr = self.get_or_create_room(token.room_id).await;
-        let transport_options =
-            WebRtcTransportOptions::new(TransportListenIps::new(TransportListenIp {
-                ip: "0.0.0.0".parse().unwrap(),
-                announced_ip: "192.168.140.136".parse().ok(),
-            }));
+    pub fn remove_room(&self, room: &Room) {
+        let mut state = self.shared.state.lock().unwrap();
+        state.rooms.remove(&room.id()).expect("room does not exist");
+        log::info!("ended empty room {}", room.id());
+    }
 
-        let mut room = room_ptr.lock().await;
-        let transport = room
-            .router
-            .create_webrtc_transport(transport_options)
-            .await
-            .unwrap();
-        let session = Arc::new(Mutex::new(Session {
-            client_rtp_capabilities: None,
-            transport: transport,
-            consumers: HashMap::new(),
-            producers: vec![],
-            room: Arc::downgrade(&room_ptr),
-        }));
-        match token.role {
-            Role::Vulcast if room.host.is_none() => {
-                room.host = Some(session.clone());
-                Ok(session)
-            }
-            Role::WebClient => {
-                room.sessions.push(session.clone());
-                Ok(session)
-            }
-            _ => Err(InvalidSessionError(
-                "Cannot have multiple Vulcasts in one room".to_owned(),
-            )),
+    pub async fn new_session(&self, token: SessionToken) -> Result<Session> {
+        let room = self.get_or_create_room(token.room_id).await;
+        let session = Session::new(room.clone()).await;
+        log::info!("created new session {}", session.id());
+        room.add_session(session.clone(), token.role)?;
+        Ok(session)
+    }
+
+    pub fn end_session(&self, session: &Session) {
+        let room = session.get_room();
+        room.remove_session(session);
+        if room.is_empty() {
+            self.remove_room(&room);
         }
+        log::info!("ended session {}", session.id());
     }
 }

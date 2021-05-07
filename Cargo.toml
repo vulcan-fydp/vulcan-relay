@@ -5,6 +5,7 @@ authors = ["netdex"]
 edition = "2018"
 
 [dependencies]
+mediasoup = "0.7.1"
 
 log = "0.4.14"
 env_logger = "0.8.3"
@@ -12,19 +13,18 @@ serde = { version = "1.0.124", features = ["derive"] }
 serde_json = "1.0.64"
 serde_repr = "0.1.6"
 uuid = { version = "0.8.2", features = ["serde", "v4"] }
+thiserror = "1.0"
 
 tokio = { version = "1.0.2", features = ["macros", "rt-multi-thread"] }
 tokio-stream = { version = "0.1.5", features = ["sync"] }
-warp = "0.3"
+tokio-local = { path = "tokio-local" }
 futures = "0.3"
 async-stream = "0.3.0"
 async-trait = "0.1.48"
 
+warp = "0.3"
 async-graphql = "2.8.4"
 async-graphql-warp = "2.8.4"
-
-mediasoup = "0.7.1"
-tokio-local = { path = "tokio-local" }
 
 [dev-dependencies]
 actix = "0.10.0"

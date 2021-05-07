@@ -10,6 +10,7 @@
   "author": "Gordon Guan <admin@netdex.org>",
   "dependencies": {
     "@apollo/client": "^3.3.16",
+    "graphql-type-json": "^0.3.2",
     "mediasoup-client": "^3.6.25",
     "subscriptions-transport-ws": "^0.9.18"
   },

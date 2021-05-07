@@ -24,5 +24,6 @@ module.exports = {
 		liveReload: false,
 		port: 3001,
 		// https: true
-	}
+	},
+	devtool: "source-map"
 };
