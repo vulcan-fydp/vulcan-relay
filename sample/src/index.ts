@@ -1,22 +1,38 @@
 /* eslint-disable no-console */
 import { Device } from 'mediasoup-client';
 // import { MediaKind, RtpCapabilities, RtpParameters } from 'mediasoup-client/lib/RtpParameters';
-// import { DtlsParameters, TransportOptions, Transport } from 'mediasoup-client/lib/Transport';
+import { Transport } from 'mediasoup-client/lib/Transport';
 // import { ConsumerOptions } from 'mediasoup-client/lib/Consumer';
 
 import { WebSocketLink } from '@apollo/client/link/ws';
-import { ApolloClient, InMemoryCache, gql } from '@apollo/client/core';
+import { ApolloClient, InMemoryCache, gql, FetchResult } from '@apollo/client/core';
 
 // please forgive me, this is the first thing i've ever written in typescript
 
+const sendPreview = document.querySelector('#preview-send') as HTMLVideoElement;
+const receivePreview = document.querySelector('#preview-receive') as HTMLVideoElement;
+
+sendPreview.onloadedmetadata = () => {
+    sendPreview.play();
+};
+receivePreview.onloadedmetadata = () => {
+    receivePreview.play();
+};
+
+let receiveMediaStream: MediaStream | undefined;
+
 enum Role {
-    WebClient,
-    Vulcast
+    WebClient = "WebClient",
+    Vulcast = "Vulcast"
+}
+
+function jsonClone(x: Object) {
+    return JSON.parse(JSON.stringify(x))
 }
 
 async function session(role: Role) {
     const wsLink = new WebSocketLink({
-        uri: 'ws://192.168.140.136:8080',
+        uri: 'wss://192.168.140.136:8443',
         options: {
             reconnect: true,
             connectionParams: {
@@ -37,18 +53,13 @@ async function session(role: Role) {
         query: gql`
         query {
             init {
-                transportOptions {
-                    id,
-                    dtlsParameters,
-                    iceCandidates,
-                    iceParameters
-                },
+                transportOptions, 
                 routerRtpCapabilities
             }
         }
         ` }).then(async (initParams) => {
-            console.log("received server init", initParams);
-            await device.load({ routerRtpCapabilities: initParams.data.init.routerRtpCapabilities });
+            console.log(role, "received server init", initParams.data);
+            await device.load({ routerRtpCapabilities: jsonClone(initParams.data.init.routerRtpCapabilities) });
 
             return client.mutate({
                 mutation: gql`
@@ -59,44 +70,142 @@ async function session(role: Role) {
                 variables: {
                     rtpCapabilities: device.rtpCapabilities
                 }
+            }).then(() => {
+                return initParams;
             })
         });
 
     switch (role) {
         case Role.WebClient:
-            init_promise.then(initResult => {
-                console.log("client init finished", initResult);
-
-
-            });
-            init_promise.then(initResult => {
-                return client.mutate({
-                    mutation: gql`
-                    mutation($producerId: ProducerId!){
-                        consume(producerId: $producerId) {
-                            id,
-                            producerId,
-                            kind,
-                            rtpParameters
+            init_promise.then(async initParams => {
+                let consumerTransport = device.createRecvTransport(jsonClone(initParams.data.init.transportOptions));
+                consumerTransport.on('connect', ({ dtlsParameters }, success) => {
+                    client.mutate({
+                        mutation: gql`
+                        mutation($dtlsParameters: DtlsParameters!){
+                            connectTransport(dtlsParameters: $dtlsParameters) 
                         }
-                    }
-                    `,
-                    variables: {
-                        producerId: "9d0c3ca8-0a18-4750-b3f2-362fcb33cdef"
-                    }
-                })
+                        `,
+                        variables: {
+                            dtlsParameters: dtlsParameters
+                        }
+                    }).then(response => {
+                        console.log(role, "connected transport", response.data);
+                        success();
+                    })
+                });
 
+                client.subscribe({
+                    query: gql`
+                    subscription {
+                        producerAvailable
+                    }
+                    `
+                }).subscribe((result: FetchResult<Record<string, any>>) => {
+                    console.log(role, "producer available", result.data)
+                    client.mutate({
+                        mutation: gql`
+                        mutation($producerId: ProducerId!){
+                            consume(producerId: $producerId) 
+                        }
+                        `,
+                        variables: {
+                            producerId: result.data?.producerAvailable
+                        }
+                    }).then(async response => {
+                        console.log(role, "consumed", response.data);
+                        const consumer = await (consumerTransport as Transport).consume(response.data.consume);
+                        console.log(role, "consumer created", consumer);
+
+                        if (receiveMediaStream) {
+                            receiveMediaStream.addTrack(consumer.track);
+                            receivePreview.srcObject = receiveMediaStream;
+                        } else {
+                            receiveMediaStream = new MediaStream([consumer.track]);
+                            receivePreview.srcObject = receiveMediaStream;
+                        }
+                        return consumer.id;
+                    }).then(consumerId => {
+                        return client.mutate({
+                            mutation: gql`
+                            mutation($consumerId: ConsumerId!){
+                                consumerResume(consumerId: $consumerId) 
+                            }
+                            `,
+                            variables: {
+                                consumerId: consumerId
+                            }
+                        })
+                    }).then(response => {
+                        console.log(role, "consumer resume", response.data);
+                    });
+                });
             });
             break;
         case Role.Vulcast:
+            init_promise.then(async initParams => {
+                let producerTransport = device.createSendTransport(jsonClone(initParams.data.init.transportOptions));
+                producerTransport.on('connect', ({ dtlsParameters }, success) => {
+                    client.mutate({
+                        mutation: gql`
+                        mutation($dtlsParameters: DtlsParameters!){
+                            connectTransport(dtlsParameters: $dtlsParameters) 
+                        }
+                        `,
+                        variables: {
+                            dtlsParameters: dtlsParameters
+                        }
+                    }).then(response => {
+                        console.log(role, "connected transport", response.data);
+                        success();
+                    })
+                }).on('produce', ({ kind, rtpParameters }, success) => {
+                    client.mutate({
+                        mutation: gql`
+                        mutation($kind: MediaKind!, $rtpParameters: RtpParameters!){
+                            produce(kind: $kind, rtpParameters: $rtpParameters) 
+                        }
+                        `,
+                        variables: {
+                            kind: kind,
+                            rtpParameters: rtpParameters
+                        }
+                    }).then(response => {
+                        console.log(role, "produced", response.data);
+                        success({ id: response.data.produce });
+                    })
+                });
+
+                const mediaStream = await navigator.mediaDevices.getUserMedia({
+                    audio: true,
+                    video: {
+                        width: {
+                            ideal: 1270
+                        },
+                        height: {
+                            ideal: 720
+                        },
+                        frameRate: {
+                            ideal: 60
+                        }
+                    }
+                });
+                sendPreview.srcObject = mediaStream;
+
+                const producers = [];
+                for (const track of mediaStream.getTracks()) {
+                    const producer = await producerTransport.produce({ track });
+                    producers.push(producer);
+                    console.log(role, `${track.kind} producer created: `, producer);
+                }
+            });
             break;
     }
-
 }
 
 async function init() {
+    await session(Role.WebClient);
     await session(Role.Vulcast);
-
 }
 
 init()

@@ -22,12 +22,10 @@ async fn main() {
     let routes = warp::ws()
         .and(graphql_protocol())
         .map(move |ws: warp::ws::Ws, protocol| {
-            // Fn
             let schema = schema.clone();
             let relay_server = relay_server.clone();
 
             let reply = ws.on_upgrade(move |websocket| async move {
-                // FnOnce
                 let (tx, mut rx) = mpsc::channel(1);
                 let relay_server_copy = relay_server.clone(); // are you happy, borrow checker
 
@@ -38,7 +36,7 @@ async fn main() {
                     |value| async move {
                         let mut data = Data::default();
                         if let Ok(token) = serde_json::from_value::<SessionToken>(value) {
-                            let session = relay_server_copy.new_session(token).await?;
+                            let session = relay_server_copy.session_from_token(token).await?;
                             data.insert(session.clone());
                             tx.send(session).await.expect("receiver dropped");
                         }
@@ -46,11 +44,8 @@ async fn main() {
                     },
                 )
                 .await;
-                match rx.recv().await {
-                    Some(session) => {
-                        relay_server.end_session(&session);
-                    }
-                    _ => {}
+                if let Some(session) = rx.recv().await {
+                    relay_server.end_session(&session).await;
                 }
             });
             warp::reply::with_header(
@@ -59,5 +54,10 @@ async fn main() {
                 protocol.sec_websocket_protocol(),
             )
         });
-    warp::serve(routes).run(([0, 0, 0, 0], 8080)).await;
+    warp::serve(routes.with(warp::log("warp-server")))
+        .tls()
+        .cert_path("config/cert.pem")
+        .key_path("config/key.pem")
+        .run(([0, 0, 0, 0], 8443))
+        .await;
 }

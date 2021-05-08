@@ -1,14 +1,13 @@
 use std::collections::HashMap;
-use std::error;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
+use anyhow::Result;
 use mediasoup::worker::{Worker, WorkerSettings};
 use mediasoup::worker_manager::WorkerManager;
+use tokio::sync::Mutex;
 
 use crate::room::{Room, RoomId};
 use crate::session::{Session, SessionToken};
-
-type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 
 #[derive(Debug, Clone)]
 pub struct RelayServer {
@@ -17,7 +16,7 @@ pub struct RelayServer {
 
 #[derive(Debug)]
 struct Shared {
-    state: Mutex<State>,
+    state: Mutex<State>, // async mutex
 
     worker_manager: WorkerManager,
     worker: Worker,
@@ -47,27 +46,15 @@ impl RelayServer {
     }
 
     pub async fn get_or_create_room(&self, room_id: RoomId) -> Room {
-        // https://github.com/rust-lang/rust/issues/57478
-        {
-            let mut state = self.shared.state.lock().unwrap();
-            if let Some(room) = state.rooms.get_mut(&room_id) {
-                return room.clone();
-            }
-        }
-        let room = Room::new(room_id.clone(), self.shared.worker.clone()).await;
-        log::info!("created new room {}", &room_id);
-        let mut state = self.shared.state.lock().unwrap();
-        state.rooms.insert(room_id, room.clone());
-        room
+        let mut state = self.shared.state.lock().await;
+        let room = state.rooms.entry(room_id.clone()).or_insert({
+            log::info!("created new room {}", &room_id);
+            Room::new(room_id, self.shared.worker.clone()).await // long critical section
+        });
+        room.clone()
     }
 
-    pub fn remove_room(&self, room: &Room) {
-        let mut state = self.shared.state.lock().unwrap();
-        state.rooms.remove(&room.id()).expect("room does not exist");
-        log::info!("ended empty room {}", room.id());
-    }
-
-    pub async fn new_session(&self, token: SessionToken) -> Result<Session> {
+    pub async fn session_from_token(&self, token: SessionToken) -> Result<Session> {
         let room = self.get_or_create_room(token.room_id).await;
         let session = Session::new(room.clone()).await;
         log::info!("created new session {}", session.id());
@@ -75,12 +62,14 @@ impl RelayServer {
         Ok(session)
     }
 
-    pub fn end_session(&self, session: &Session) {
+    pub async fn end_session(&self, session: &Session) {
+        let mut state = self.shared.state.lock().await;
         let room = session.get_room();
         room.remove_session(session);
-        if room.is_empty() {
-            self.remove_room(&room);
-        }
         log::info!("ended session {}", session.id());
+        if room.is_empty() {
+            state.rooms.remove(&room.id()).expect("room does not exist");
+            log::info!("ended room {}", room.id());
+        }
     }
 }

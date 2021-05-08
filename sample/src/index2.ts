@@ -4,9 +4,6 @@ import { MediaKind, RtpCapabilities, RtpParameters } from 'mediasoup-client/lib/
 import { DtlsParameters, TransportOptions, Transport } from 'mediasoup-client/lib/Transport';
 import { ConsumerOptions } from 'mediasoup-client/lib/Consumer';
 
-import { WebSocketLink } from '@apollo/client/link/ws';
-import { ApolloClient, InMemoryCache, gql } from '@apollo/client/core';
-
 interface ServerInit {
 	action: 'Init';
 	consumerTransportOptions: TransportOptions;
@@ -238,35 +235,4 @@ async function init() {
 	ws.onerror = console.error;
 }
 
-
-
-const wsLink = new WebSocketLink({
-	uri: 'ws://192.168.140.136:8080',
-	options: {
-		reconnect: true,
-		connectionParams: {
-			"roomId": "ayush",
-			"role": "WebClient"
-		}
-	}
-});
-
-const client = new ApolloClient({
-	link: wsLink,
-	cache: new InMemoryCache()
-})
-
-const dab = gql`
-query {
-	init {
-		transportOptions,
-		routerRtpCapabilities
-	}
-}
-`;
-
-client.query({query: dab}).then((value) => {
-	console.log(value);
-});
-
-console.log(init);
+init()

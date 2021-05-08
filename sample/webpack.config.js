@@ -23,7 +23,7 @@ module.exports = {
 	devServer: {
 		liveReload: false,
 		port: 3001,
-		// https: true
+		https: true
 	},
 	devtool: "source-map"
 };

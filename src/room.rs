@@ -3,29 +3,32 @@ use std::collections::HashMap;
 use std::num::{NonZeroU32, NonZeroU8};
 use std::sync::{Arc, Mutex, Weak};
 
+use anyhow::{anyhow, Result};
 use mediasoup::producer::ProducerId;
 use mediasoup::router::{Router, RouterOptions};
 use mediasoup::rtp_parameters::{
     MimeTypeAudio, MimeTypeVideo, RtcpFeedback, RtpCodecCapability, RtpCodecParametersParameters,
 };
 use mediasoup::worker::Worker;
-use thiserror::Error;
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 
 use crate::session::{Role, Session, SessionId};
 
 pub type RoomId = String;
-/// Version of Room that weakly owns Shared state, for cycle prevention
-pub type WeakRoom = Weak<Shared>;
 
 #[derive(Debug, Clone)]
 pub struct Room {
     shared: Arc<Shared>,
 }
 
+#[derive(Debug, Clone)]
+pub struct WeakRoom {
+    shared: Weak<Shared>,
+}
+
 #[derive(Debug)]
-pub struct Shared {
+struct Shared {
     state: Mutex<State>,
 
     id: RoomId,
@@ -63,11 +66,11 @@ impl Room {
         self.shared.router.clone()
     }
 
-    pub fn add_session(&self, session: Session, role: Role) -> Result<(), RoomError> {
+    pub fn add_session(&self, session: Session, role: Role) -> Result<()> {
         let mut state = self.shared.state.lock().unwrap();
         match role {
             Role::Vulcast => match state.host {
-                Some(_) => Err(RoomError::TooManyHosts),
+                Some(_) => Err(anyhow!("cannot connect more than one Vulcast")),
                 None => {
                     state.host.replace(session);
                     Ok(())
@@ -122,25 +125,17 @@ impl Room {
     pub fn id(&self) -> RoomId {
         self.shared.id.clone()
     }
-}
-
-#[derive(Error, Debug)]
-pub enum RoomError {
-    #[error("cannot connect more than one Vulcast to a room")]
-    TooManyHosts,
-}
-
-impl From<WeakRoom> for Room {
-    fn from(shared: WeakRoom) -> Self {
-        Room {
-            shared: shared.upgrade().unwrap(),
+    pub fn downgrade(&self) -> WeakRoom {
+        WeakRoom {
+            shared: Arc::downgrade(&self.shared),
         }
     }
 }
 
-impl From<Room> for WeakRoom {
-    fn from(room: Room) -> Self {
-        Arc::downgrade(&room.shared)
+impl WeakRoom {
+    pub fn upgrade(&self) -> Option<Room> {
+        let shared = self.shared.upgrade()?;
+        Some(Room { shared })
     }
 }
 
