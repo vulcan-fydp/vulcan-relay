@@ -23,12 +23,14 @@ impl QueryRoot {
             send_transport_options: TransportOptions {
                 id: send_transport.id(),
                 dtls_parameters: send_transport.dtls_parameters(),
+                sctp_parameters: send_transport.sctp_parameters().unwrap(),
                 ice_candidates: send_transport.ice_candidates().clone(),
                 ice_parameters: send_transport.ice_parameters().clone(),
             },
             recv_transport_options: TransportOptions {
                 id: recv_transport.id(),
                 dtls_parameters: recv_transport.dtls_parameters(),
+                sctp_parameters: send_transport.sctp_parameters().unwrap(),
                 ice_candidates: recv_transport.ice_candidates().clone(),
                 ice_parameters: recv_transport.ice_parameters().clone(),
             },
@@ -120,6 +122,7 @@ impl MutationRoot {
                 .id(),
         ))
     }
+
     /// Request consumption of data stream
     #[graphql(guard(RoleGuard(role = "Role::Vulcast")))]
     async fn consume_data(
@@ -171,6 +174,7 @@ impl SubscriptionRoot {
         let room = session.get_room();
         Ok(room.available_producers().map(|x| ProducerId(x)))
     }
+    /// Notify when new data producers are available
     #[graphql(guard(RoleGuard(role = "Role::Vulcast")))]
     async fn data_producer_available(
         &self,
@@ -250,17 +254,6 @@ scalar!(MediaKind);
 struct RtpParameters(mediasoup::rtp_parameters::RtpParameters);
 scalar!(RtpParameters);
 
-/// Initialization parameters for a transport
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct TransportOptions {
-    id: mediasoup::transport::TransportId,
-    dtls_parameters: mediasoup::data_structures::DtlsParameters,
-    ice_candidates: Vec<mediasoup::data_structures::IceCandidate>,
-    ice_parameters: mediasoup::data_structures::IceParameters,
-}
-scalar!(TransportOptions);
-
 #[derive(Serialize, Deserialize, Clone)]
 struct RtpCapabilities(mediasoup::rtp_parameters::RtpCapabilities);
 scalar!(RtpCapabilities);
@@ -280,6 +273,18 @@ struct ServerInitParameters {
     recv_transport_options: TransportOptions,
     router_rtp_capabilities: RtpCapabilitiesFinalized,
 }
+
+/// Initialization parameters for a transport
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct TransportOptions {
+    id: mediasoup::transport::TransportId,
+    dtls_parameters: mediasoup::data_structures::DtlsParameters,
+    sctp_parameters: mediasoup::sctp_parameters::SctpParameters,
+    ice_candidates: Vec<mediasoup::data_structures::IceCandidate>,
+    ice_parameters: mediasoup::data_structures::IceParameters,
+}
+scalar!(TransportOptions);
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]

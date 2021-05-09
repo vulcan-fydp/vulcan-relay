@@ -17,7 +17,7 @@ async fn main() {
 
     let relay_server = RelayServer::new().await;
     let schema = signal_schema::schema(&relay_server);
-    println!("{}", &schema.sdl());
+    // println!("{}", &schema.sdl());
 
     let routes = warp::ws()
         .and(graphql_protocol())
