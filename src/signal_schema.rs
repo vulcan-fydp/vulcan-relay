@@ -6,7 +6,7 @@ use async_graphql::{scalar, Context, Object, Result, Schema, SimpleObject, Subsc
 use mediasoup::transport::Transport;
 
 use crate::relay_server::RelayServer;
-use crate::session::Session;
+use crate::session::{Role, Session};
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct QueryRoot;
@@ -17,13 +17,20 @@ impl QueryRoot {
     async fn init(&self, ctx: &Context<'_>) -> ServerInitParameters {
         let session = ctx.data_unchecked::<Session>();
         let room = session.get_room();
-        let transport = session.get_transport();
+        let send_transport = session.get_send_transport();
+        let recv_transport = session.get_recv_transport();
         ServerInitParameters {
-            transport_options: TransportOptions {
-                id: transport.id(),
-                dtls_parameters: transport.dtls_parameters(),
-                ice_candidates: transport.ice_candidates().clone(),
-                ice_parameters: transport.ice_parameters().clone(),
+            send_transport_options: TransportOptions {
+                id: send_transport.id(),
+                dtls_parameters: send_transport.dtls_parameters(),
+                ice_candidates: send_transport.ice_candidates().clone(),
+                ice_parameters: send_transport.ice_parameters().clone(),
+            },
+            recv_transport_options: TransportOptions {
+                id: recv_transport.id(),
+                dtls_parameters: recv_transport.dtls_parameters(),
+                ice_candidates: recv_transport.ice_candidates().clone(),
+                ice_parameters: recv_transport.ice_parameters().clone(),
             },
             router_rtp_capabilities: RtpCapabilitiesFinalized(
                 room.get_router().rtp_capabilities().clone(),
@@ -46,20 +53,36 @@ impl MutationRoot {
 
     /// Provide connection parameters for server-side transport
     #[graphql(guard(SessionGuard()))]
-    async fn connect_transport(
+    async fn connect_send_transport(
         &self,
         ctx: &Context<'_>,
         dtls_parameters: DtlsParameters,
     ) -> Result<TransportId> {
         let session = ctx.data_unchecked::<Session>();
-        Ok(session
-            .connect_transport(dtls_parameters.0)
-            .await
-            .map(|transport_id| TransportId(transport_id))?)
+        Ok(TransportId(
+            session
+                .connect_transport(session.get_send_transport(), dtls_parameters.0)
+                .await?,
+        ))
+    }
+
+    /// Provide connection parameters for server-side transport
+    #[graphql(guard(SessionGuard()))]
+    async fn connect_recv_transport(
+        &self,
+        ctx: &Context<'_>,
+        dtls_parameters: DtlsParameters,
+    ) -> Result<TransportId> {
+        let session = ctx.data_unchecked::<Session>();
+        Ok(TransportId(
+            session
+                .connect_transport(session.get_recv_transport(), dtls_parameters.0)
+                .await?,
+        ))
     }
 
     /// Request consumption of media stream
-    #[graphql(guard(SessionGuard()))]
+    #[graphql(guard(RoleGuard(role = "Role::WebClient")))]
     async fn consume(&self, ctx: &Context<'_>, producer_id: ProducerId) -> Result<ConsumerOptions> {
         let local_pool = ctx.data_unchecked::<tokio_local::LocalPoolHandle>();
         let session = ctx.data_unchecked::<Session>();
@@ -73,7 +96,7 @@ impl MutationRoot {
     }
 
     /// Resume existing consumer
-    #[graphql(guard(SessionGuard()))]
+    #[graphql(guard(RoleGuard(role = "Role::WebClient")))]
     async fn consumer_resume(&self, ctx: &Context<'_>, consumer_id: ConsumerId) -> Result<bool> {
         let session = ctx.data_unchecked::<Session>();
         session.consumer_resume(consumer_id.0).await?;
@@ -81,7 +104,7 @@ impl MutationRoot {
     }
 
     /// Request production of media stream
-    #[graphql(guard(SessionGuard()))]
+    #[graphql(guard(RoleGuard(role = "Role::Vulcast")))]
     async fn produce(
         &self,
         ctx: &Context<'_>,
@@ -97,6 +120,41 @@ impl MutationRoot {
                 .id(),
         ))
     }
+    /// Request consumption of data stream
+    #[graphql(guard(RoleGuard(role = "Role::Vulcast")))]
+    async fn consume_data(
+        &self,
+        ctx: &Context<'_>,
+        data_producer_id: DataProducerId,
+    ) -> Result<DataConsumerOptions> {
+        let local_pool = ctx.data_unchecked::<tokio_local::LocalPoolHandle>();
+        let session = ctx.data_unchecked::<Session>();
+        let data_consumer = session
+            .consume_data(local_pool.clone(), data_producer_id.0)
+            .await?;
+        Ok(DataConsumerOptions {
+            id: data_consumer.id(),
+            data_producer_id: data_producer_id.0,
+            sctp_stream_parameters: data_consumer.sctp_stream_parameters().unwrap(),
+        })
+    }
+
+    /// Request production of data stream
+    #[graphql(guard(RoleGuard(role = "Role::WebClient")))]
+    async fn produce_data(
+        &self,
+        ctx: &Context<'_>,
+        sctp_stream_parameters: SctpStreamParameters,
+    ) -> Result<DataProducerId> {
+        let local_pool = ctx.data_unchecked::<tokio_local::LocalPoolHandle>();
+        let session = ctx.data_unchecked::<Session>();
+        Ok(DataProducerId(
+            session
+                .produce_data(local_pool.clone(), sctp_stream_parameters.0)
+                .await?
+                .id(),
+        ))
+    }
 }
 
 #[derive(Default)]
@@ -104,7 +162,7 @@ pub struct SubscriptionRoot;
 #[Subscription]
 impl SubscriptionRoot {
     /// Notify when new producers are available
-    #[graphql(guard(SessionGuard()))]
+    #[graphql(guard(RoleGuard(role = "Role::WebClient")))]
     async fn producer_available(
         &self,
         ctx: &Context<'_>,
@@ -112,6 +170,15 @@ impl SubscriptionRoot {
         let session = ctx.data_unchecked::<Session>();
         let room = session.get_room();
         Ok(room.available_producers().map(|x| ProducerId(x)))
+    }
+    #[graphql(guard(RoleGuard(role = "Role::Vulcast")))]
+    async fn data_producer_available(
+        &self,
+        ctx: &Context<'_>,
+    ) -> async_graphql::Result<impl Stream<Item = DataProducerId>> {
+        let session = ctx.data_unchecked::<Session>();
+        let room = session.get_room();
+        Ok(room.available_data_producers().map(|x| DataProducerId(x)))
     }
 }
 
@@ -135,6 +202,19 @@ impl Guard for SessionGuard {
     }
 }
 
+struct RoleGuard {
+    role: Role,
+}
+#[async_trait::async_trait]
+impl Guard for RoleGuard {
+    async fn check(&self, ctx: &Context<'_>) -> Result<()> {
+        match ctx.data_opt::<Session>() {
+            Some(session) if session.get_role() == self.role => Ok(()),
+            _ => Err(format!("requires session with role {:?}", self.role).into()),
+        }
+    }
+}
+
 #[derive(Deserialize, Serialize, Clone, Copy)]
 #[serde(transparent)]
 struct TransportId(mediasoup::transport::TransportId);
@@ -149,6 +229,11 @@ scalar!(ConsumerId);
 #[serde(transparent)]
 struct ProducerId(mediasoup::producer::ProducerId);
 scalar!(ProducerId);
+
+#[derive(Deserialize, Serialize, Clone, Copy)]
+#[serde(transparent)]
+struct DataProducerId(mediasoup::data_producer::DataProducerId);
+scalar!(DataProducerId);
 
 #[derive(Deserialize, Serialize, Clone)]
 #[serde(transparent)]
@@ -184,19 +269,33 @@ scalar!(RtpCapabilities);
 struct RtpCapabilitiesFinalized(mediasoup::rtp_parameters::RtpCapabilitiesFinalized);
 scalar!(RtpCapabilitiesFinalized);
 
+#[derive(Serialize, Deserialize, Clone)]
+struct SctpStreamParameters(mediasoup::sctp_parameters::SctpStreamParameters);
+scalar!(SctpStreamParameters);
+
 /// Initialization parameters for a client-side mediasoup device
 #[derive(SimpleObject)]
 struct ServerInitParameters {
-    transport_options: TransportOptions,
+    send_transport_options: TransportOptions,
+    recv_transport_options: TransportOptions,
     router_rtp_capabilities: RtpCapabilitiesFinalized,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct ConsumerOptions {
-    pub id: mediasoup::consumer::ConsumerId,
-    pub producer_id: mediasoup::producer::ProducerId,
-    pub kind: mediasoup::rtp_parameters::MediaKind,
-    pub rtp_parameters: mediasoup::rtp_parameters::RtpParameters,
+struct ConsumerOptions {
+    id: mediasoup::consumer::ConsumerId,
+    producer_id: mediasoup::producer::ProducerId,
+    kind: mediasoup::rtp_parameters::MediaKind,
+    rtp_parameters: mediasoup::rtp_parameters::RtpParameters,
 }
 scalar!(ConsumerOptions);
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct DataConsumerOptions {
+    id: mediasoup::data_consumer::DataConsumerId,
+    data_producer_id: mediasoup::data_producer::DataProducerId,
+    sctp_stream_parameters: mediasoup::sctp_parameters::SctpStreamParameters,
+}
+scalar!(DataConsumerOptions);

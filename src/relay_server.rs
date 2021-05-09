@@ -56,9 +56,9 @@ impl RelayServer {
 
     pub async fn session_from_token(&self, token: SessionToken) -> Result<Session> {
         let room = self.get_or_create_room(token.room_id).await;
-        let session = Session::new(room.clone()).await;
+        let session = Session::new(room.clone(), token.role).await;
         log::info!("created new session {}", session.id());
-        room.add_session(session.clone(), token.role)?;
+        room.add_session(session.clone())?;
         Ok(session)
     }
 

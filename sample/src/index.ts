@@ -53,7 +53,8 @@ async function session(role: Role) {
         query: gql`
         query {
             init {
-                transportOptions, 
+                sendTransportOptions,
+                recvTransportOptions, 
                 routerRtpCapabilities
             }
         }
@@ -73,28 +74,45 @@ async function session(role: Role) {
             }).then(() => {
                 return initParams;
             })
-        });
-
-    switch (role) {
-        case Role.WebClient:
-            init_promise.then(async initParams => {
-                let consumerTransport = device.createRecvTransport(jsonClone(initParams.data.init.transportOptions));
-                consumerTransport.on('connect', ({ dtlsParameters }, success) => {
+        }).then(async initParams => {
+                let sendTransport = device.createSendTransport(jsonClone(initParams.data.init.sendTransportOptions));
+                sendTransport.on('connect', ({ dtlsParameters }, success) => {
                     client.mutate({
                         mutation: gql`
                         mutation($dtlsParameters: DtlsParameters!){
-                            connectTransport(dtlsParameters: $dtlsParameters) 
+                            connectSendTransport(dtlsParameters: $dtlsParameters) 
                         }
                         `,
                         variables: {
                             dtlsParameters: dtlsParameters
                         }
                     }).then(response => {
-                        console.log(role, "connected transport", response.data);
+                        console.log(role, "connected send transport", response.data);
                         success();
                     })
                 });
+                let recvTransport = device.createRecvTransport(jsonClone(initParams.data.init.recvTransportOptions));
+                recvTransport.on('connect', ({ dtlsParameters }, success) => {
+                    client.mutate({
+                        mutation: gql`
+                        mutation($dtlsParameters: DtlsParameters!){
+                            connectRecvTransport(dtlsParameters: $dtlsParameters) 
+                        }
+                        `,
+                        variables: {
+                            dtlsParameters: dtlsParameters
+                        }
+                    }).then(response => {
+                        console.log(role, "connected recv transport", response.data);
+                        success();
+                    })
+                });
+                return {sendTransport, recvTransport}
+        });
 
+    switch (role) {
+        case Role.WebClient:
+            init_promise.then(async ({sendTransport: _sendTransport, recvTransport}) => {
                 client.subscribe({
                     query: gql`
                     subscription {
@@ -114,7 +132,7 @@ async function session(role: Role) {
                         }
                     }).then(async response => {
                         console.log(role, "consumed", response.data);
-                        const consumer = await (consumerTransport as Transport).consume(response.data.consume);
+                        const consumer = await (recvTransport as Transport).consume(response.data.consume);
                         console.log(role, "consumer created", consumer);
 
                         if (receiveMediaStream) {
@@ -143,23 +161,8 @@ async function session(role: Role) {
             });
             break;
         case Role.Vulcast:
-            init_promise.then(async initParams => {
-                let producerTransport = device.createSendTransport(jsonClone(initParams.data.init.transportOptions));
-                producerTransport.on('connect', ({ dtlsParameters }, success) => {
-                    client.mutate({
-                        mutation: gql`
-                        mutation($dtlsParameters: DtlsParameters!){
-                            connectTransport(dtlsParameters: $dtlsParameters) 
-                        }
-                        `,
-                        variables: {
-                            dtlsParameters: dtlsParameters
-                        }
-                    }).then(response => {
-                        console.log(role, "connected transport", response.data);
-                        success();
-                    })
-                }).on('produce', ({ kind, rtpParameters }, success) => {
+            init_promise.then(async ({sendTransport, recvTransport: _recvTransport}) => {
+                sendTransport.on('produce', ({ kind, rtpParameters }, success) => {
                     client.mutate({
                         mutation: gql`
                         mutation($kind: MediaKind!, $rtpParameters: RtpParameters!){
@@ -194,7 +197,7 @@ async function session(role: Role) {
 
                 const producers = [];
                 for (const track of mediaStream.getTracks()) {
-                    const producer = await producerTransport.produce({ track });
+                    const producer = await sendTransport.produce({ track });
                     producers.push(producer);
                     console.log(role, `${track.kind} producer created: `, producer);
                 }

@@ -4,6 +4,7 @@ use std::num::{NonZeroU32, NonZeroU8};
 use std::sync::{Arc, Mutex, Weak};
 
 use anyhow::{anyhow, Result};
+use mediasoup::data_producer::DataProducerId;
 use mediasoup::producer::ProducerId;
 use mediasoup::router::{Router, RouterOptions};
 use mediasoup::rtp_parameters::{
@@ -34,6 +35,7 @@ struct Shared {
     id: RoomId,
     router: Router,
     producer_available_tx: broadcast::Sender<ProducerId>,
+    data_producer_available_tx: broadcast::Sender<DataProducerId>,
 }
 
 #[derive(Debug)]
@@ -48,7 +50,6 @@ impl Room {
             .create_router(RouterOptions::new(media_codecs()))
             .await
             .unwrap();
-        let (tx, _) = broadcast::channel(16);
         Self {
             shared: Arc::new(Shared {
                 state: Mutex::new(State {
@@ -57,7 +58,8 @@ impl Room {
                 }),
                 id: room_id,
                 router: router,
-                producer_available_tx: tx,
+                producer_available_tx: broadcast::channel(16).0,
+                data_producer_available_tx: broadcast::channel(16).0,
             }),
         }
     }
@@ -66,9 +68,9 @@ impl Room {
         self.shared.router.clone()
     }
 
-    pub fn add_session(&self, session: Session, role: Role) -> Result<()> {
+    pub fn add_session(&self, session: Session) -> Result<()> {
         let mut state = self.shared.state.lock().unwrap();
-        match role {
+        match session.get_role() {
             Role::Vulcast => match state.host {
                 Some(_) => Err(anyhow!("cannot connect more than one Vulcast")),
                 None => {
@@ -85,11 +87,15 @@ impl Room {
 
     pub fn remove_session(&self, session: &Session) {
         let mut state = self.shared.state.lock().unwrap();
-        match &state.host {
-            Some(host) if host.id() == session.id() => {
-                state.host = None;
+        match session.get_role() {
+            Role::Vulcast => {
+                if Some(session) == state.host.as_ref() {
+                    state.host = None;
+                } else {
+                    panic!("session does not exist");
+                }
             }
-            _ => {
+            Role::WebClient => {
                 state
                     .sessions
                     .remove(&session.id())
@@ -98,8 +104,14 @@ impl Room {
         }
     }
 
-    pub fn notify_new_producer(&self, producer_id: ProducerId) {
+    pub fn announce_producer(&self, producer_id: ProducerId) {
         let _ = self.shared.producer_available_tx.send(producer_id);
+    }
+    pub fn announce_data_producer(&self, data_producer_id: DataProducerId) {
+        let _ = self
+            .shared
+            .data_producer_available_tx
+            .send(data_producer_id);
     }
 
     /// Get a stream which yields existing and new producers
@@ -115,6 +127,21 @@ impl Room {
                 .map(|producer| producer.id()),
             ),
             BroadcastStream::new(self.shared.producer_available_tx.subscribe())
+                .map(|x| x.expect("receiver dropped message")),
+        )
+    }
+    /// Get a stream which yields existing and new data producers
+    pub fn available_data_producers(&self) -> impl Stream<Item = DataProducerId> {
+        let state = self.shared.state.lock().unwrap();
+        let data_producers = state
+            .sessions
+            .values()
+            .flat_map(|session| session.get_data_producers())
+            .map(|data_producer| data_producer.id())
+            .collect::<Vec<DataProducerId>>();
+        stream::select(
+            stream::iter(data_producers),
+            BroadcastStream::new(self.shared.data_producer_available_tx.subscribe())
                 .map(|x| x.expect("receiver dropped message")),
         )
     }
