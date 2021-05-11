@@ -2,12 +2,19 @@
 
 ## Build
 - Linux only
-- You may need to change WebRTC listen/announce endpoints in `src/session.rs` 
 ```
 git clone https://github.com/vulcan-fydp/vulcan-relay.git
 cd vulcan-relay
-cargo run
+cargo run -- run --cert-path config/cert.pem --key-path config/key.pem
 ```
+
+To accept RTC connections on an interface other than localhost, use the `--rtc-ip` flag. 
+RTC connections include ICE, DTLS, and RTP. 
+If you use `0.0.0.0` or `::` as the RTC IP, specify an RTC Announce IP with the `--rtc-announce-ip` flag. 
+In most cases, this will be a public IPv4 address. 
+Ports 10000-59999 (TCP/UDP) must be open for ingress/egress traffic to the interface assigned to the RTC Announce IP. 
+
+To dump the procedurally generated GraphQL signalling schema, run `cargo run -- schema`.
 
 ## Sample
 - Sample web application using mediasoup-client which emulates a Vulcast/Web Client from the perspective of the Relay
@@ -20,5 +27,5 @@ cd sample
 npm start
 ```
 
-1. Navigate to wss://localhost:8443 and click through self-signed certificate warnings
+1. Navigate to https://localhost:8443 and click through self-signed certificate warnings
 2. Navigate to https://localhost:3001

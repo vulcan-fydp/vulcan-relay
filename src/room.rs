@@ -14,21 +14,20 @@ use mediasoup::worker::Worker;
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 
-use crate::session::{Role, Session, SessionId};
+use crate::session::{Role, Session, SessionId, WeakSession};
 
 pub type RoomId = String;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Room {
     shared: Arc<Shared>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct WeakRoom {
     shared: Weak<Shared>,
 }
 
-#[derive(Debug)]
 struct Shared {
     state: Mutex<State>,
 
@@ -38,10 +37,8 @@ struct Shared {
     data_producer_available_tx: broadcast::Sender<DataProducerId>,
 }
 
-#[derive(Debug)]
 struct State {
-    host: Option<Session>,
-    sessions: HashMap<SessionId, Session>,
+    sessions: HashMap<SessionId, WeakSession>,
 }
 
 impl Room {
@@ -53,7 +50,6 @@ impl Room {
         Self {
             shared: Arc::new(Shared {
                 state: Mutex::new(State {
-                    host: None,
                     sessions: HashMap::new(),
                 }),
                 id: room_id,
@@ -70,38 +66,35 @@ impl Room {
 
     pub fn add_session(&self, session: Session) -> Result<()> {
         let mut state = self.shared.state.lock().unwrap();
-        match session.get_role() {
-            Role::Vulcast => match state.host {
-                Some(_) => Err(anyhow!("cannot connect more than one Vulcast")),
-                None => {
-                    state.host.replace(session);
-                    Ok(())
-                }
-            },
-            Role::WebClient => {
-                state.sessions.insert(session.id(), session);
-                Ok(())
-            }
+        if session.role() == Role::Vulcast
+            && state
+                .sessions
+                .values()
+                .any(|session| session.upgrade().unwrap().role() == Role::Vulcast)
+        {
+            return Err(anyhow!("cannot have more than one Vulcast in a room"));
         }
+        state.sessions.insert(session.id(), session.downgrade());
+
+        let weak_room = self.downgrade();
+        session
+            .on_closed(move |session_id| {
+                if let Some(room) = weak_room.upgrade() {
+                    log::debug!("removing session {} from room {}", session_id, room.id());
+                    room.remove_session(session_id);
+                }
+            })
+            .detach();
+
+        Ok(())
     }
 
-    pub fn remove_session(&self, session: &Session) {
+    fn remove_session(&self, session_id: SessionId) {
         let mut state = self.shared.state.lock().unwrap();
-        match session.get_role() {
-            Role::Vulcast => {
-                if Some(session) == state.host.as_ref() {
-                    state.host = None;
-                } else {
-                    panic!("session does not exist");
-                }
-            }
-            Role::WebClient => {
-                state
-                    .sessions
-                    .remove(&session.id())
-                    .expect("session does not exist");
-            }
-        }
+        state
+            .sessions
+            .remove(&session_id)
+            .expect("session does not exist");
     }
 
     pub fn announce_producer(&self, producer_id: ProducerId) {
@@ -117,15 +110,14 @@ impl Room {
     /// Get a stream which yields existing and new producers
     pub fn available_producers(&self) -> impl Stream<Item = ProducerId> {
         let state = self.shared.state.lock().unwrap();
+        let producers = state
+            .sessions
+            .values()
+            .flat_map(|session| session.upgrade().unwrap().get_producers())
+            .map(|producer| producer.id())
+            .collect::<Vec<ProducerId>>();
         stream::select(
-            stream::iter(
-                match &state.host {
-                    Some(host) => host.get_producers(),
-                    None => vec![],
-                }
-                .into_iter()
-                .map(|producer| producer.id()),
-            ),
+            stream::iter(producers),
             BroadcastStream::new(self.shared.producer_available_tx.subscribe())
                 .map(|x| x.expect("receiver dropped message")),
         )
@@ -136,7 +128,7 @@ impl Room {
         let data_producers = state
             .sessions
             .values()
-            .flat_map(|session| session.get_data_producers())
+            .flat_map(|session| session.upgrade().unwrap().get_data_producers())
             .map(|data_producer| data_producer.id())
             .collect::<Vec<DataProducerId>>();
         stream::select(
@@ -145,10 +137,7 @@ impl Room {
                 .map(|x| x.expect("receiver dropped message")),
         )
     }
-    pub fn is_empty(&self) -> bool {
-        let state = self.shared.state.lock().unwrap();
-        state.host.is_none() && state.sessions.is_empty()
-    }
+
     pub fn id(&self) -> RoomId {
         self.shared.id.clone()
     }
@@ -166,6 +155,12 @@ impl WeakRoom {
     }
 }
 
+impl Drop for Shared {
+    fn drop(&mut self) {
+        log::debug!("dropped room {}", self.id)
+    }
+}
+
 fn media_codecs() -> Vec<RtpCodecCapability> {
     vec![
         RtpCodecCapability::Audio {
@@ -177,7 +172,7 @@ fn media_codecs() -> Vec<RtpCodecCapability> {
             rtcp_feedback: vec![RtcpFeedback::TransportCc],
         },
         RtpCodecCapability::Video {
-            mime_type: MimeTypeVideo::H264,
+            mime_type: MimeTypeVideo::Vp8,
             preferred_payload_type: None,
             clock_rate: NonZeroU32::new(90000).unwrap(),
             parameters: RtpCodecParametersParameters::default(),

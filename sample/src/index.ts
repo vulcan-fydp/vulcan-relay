@@ -7,10 +7,17 @@ import { Device } from 'mediasoup-client';
 import { WebSocketLink } from '@apollo/client/link/ws';
 import { ApolloClient, InMemoryCache, gql, FetchResult } from '@apollo/client/core';
 
+declare global {
+    interface HTMLCanvasElement {
+        captureStream(frameRate?: number): MediaStream;
+    }
+}
+
 // please forgive me, this is the first thing i've ever written in typescript
 
 const sendPreview = document.querySelector('#preview-send') as HTMLVideoElement;
 const receivePreview = document.querySelector('#preview-receive') as HTMLVideoElement;
+const canvas = document.querySelector('canvas') as HTMLCanvasElement;
 
 sendPreview.onloadedmetadata = () => {
     sendPreview.play();
@@ -224,20 +231,30 @@ async function session(role: Role) {
                 });
 
                 // create a webcam/mic combo for testing (would be cap card output from Vulcast)
-                const mediaStream = await navigator.mediaDevices.getUserMedia({
-                    audio: true,
-                    video: {
-                        width: {
-                            ideal: 1270
-                        },
-                        height: {
-                            ideal: 720
-                        },
-                        frameRate: {
-                            ideal: 60
-                        }
-                    }
-                });
+                // const mediaStream = await navigator.mediaDevices.getUserMedia({
+                //     audio: true,
+                //     video: {
+                //         width: {
+                //             ideal: 1270
+                //         },
+                //         height: {
+                //             ideal: 720
+                //         },
+                //         frameRate: {
+                //             ideal: 60
+                //         }
+                //     }
+                // });
+                const mediaStream = canvas.captureStream(60);
+                var ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+                setInterval(() => {
+                    ctx.fillStyle = "#" + Math.floor(Math.random()*16777215).toString(16);
+                    ctx.fillRect(
+                        Math.floor(Math.random() * 640) - 640 / 2,
+                        Math.floor(Math.random() * 480) - 480 / 2,
+                        Math.floor(Math.random() * 640),
+                        Math.floor(Math.random() * 480));
+                }, 100);
                 sendPreview.srcObject = mediaStream;
 
                 // create producers for each media track

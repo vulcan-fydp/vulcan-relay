@@ -5,7 +5,6 @@ use async_graphql::guard::Guard;
 use async_graphql::{scalar, Context, Object, Result, Schema, SimpleObject, Subscription};
 use mediasoup::transport::Transport;
 
-use crate::relay_server::RelayServer;
 use crate::session::{Role, Session};
 
 #[derive(Serialize, Deserialize, Default)]
@@ -188,9 +187,8 @@ impl SubscriptionRoot {
 
 pub type SignalSchema = Schema<QueryRoot, MutationRoot, SubscriptionRoot>;
 
-pub fn schema(server: &RelayServer) -> SignalSchema {
+pub fn schema() -> SignalSchema {
     SignalSchema::build(QueryRoot, MutationRoot, SubscriptionRoot)
-        .data(server.clone())
         .data(tokio_local::new_local_pool(2))
         .finish()
 }
@@ -213,11 +211,23 @@ struct RoleGuard {
 impl Guard for RoleGuard {
     async fn check(&self, ctx: &Context<'_>) -> Result<()> {
         match ctx.data_opt::<Session>() {
-            Some(session) if session.get_role() == self.role => Ok(()),
+            Some(session) if session.role() == self.role => Ok(()),
             _ => Err(format!("requires session with role {:?}", self.role).into()),
         }
     }
 }
+
+struct PrivilegeGuard ;
+#[async_trait::async_trait]
+impl Guard for PrivilegeGuard {
+    async fn check(&self, ctx: &Context<'_>) -> Result<()> {
+        match ctx.data_opt::<Session>() {
+            Some(session) if session.is_privileged() => Ok(()),
+            _ => Err(format!("requires privileged session").into()),
+        }
+    }
+}
+
 
 #[derive(Deserialize, Serialize, Clone, Copy)]
 #[serde(transparent)]

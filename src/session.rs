@@ -4,40 +4,42 @@ use std::sync::{Arc, Mutex, Weak};
 use uuid::Uuid;
 
 use anyhow::{anyhow, Result};
+use event_listener_primitives::{BagOnce, HandlerId};
 use mediasoup::consumer::{Consumer, ConsumerId, ConsumerOptions};
 use mediasoup::data_consumer::{DataConsumer, DataConsumerId, DataConsumerOptions};
 use mediasoup::data_producer::{DataProducer, DataProducerId, DataProducerOptions};
-use mediasoup::data_structures::{DtlsParameters, TransportListenIp};
+use mediasoup::data_structures::DtlsParameters;
 use mediasoup::producer::{Producer, ProducerId, ProducerOptions};
 use mediasoup::rtp_parameters::RtpCapabilities;
 use mediasoup::rtp_parameters::{MediaKind, RtpParameters};
 use mediasoup::sctp_parameters::SctpStreamParameters;
 use mediasoup::transport::{Transport, TransportId};
 use mediasoup::webrtc_transport::{
-    TransportListenIps, WebRtcTransport, WebRtcTransportOptions, WebRtcTransportRemoteParameters,
+    WebRtcTransport, WebRtcTransportOptions, WebRtcTransportRemoteParameters,
 };
 
-use crate::room::{Room, RoomId, WeakRoom};
+use crate::room::{Room, RoomId};
 
 pub type SessionId = Uuid;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Session {
     shared: Arc<Shared>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct WeakSession {
     shared: Weak<Shared>,
 }
 
-#[derive(Debug)]
 struct Shared {
     state: Mutex<State>,
+    handlers: Handlers,
 
     id: SessionId,
     role: Role,
-    room: WeakRoom,
+    privileged: bool,
+    room: Room,
     send_transport: WebRtcTransport, // client -> server
     recv_transport: WebRtcTransport, // server -> client
 }
@@ -48,7 +50,6 @@ impl PartialEq for Shared {
 }
 impl Eq for Shared {}
 
-#[derive(Debug)]
 struct State {
     client_rtp_capabilities: Option<RtpCapabilities>,
     consumers: HashMap<ConsumerId, Consumer>,
@@ -57,16 +58,13 @@ struct State {
     data_producers: HashMap<DataProducerId, DataProducer>,
 }
 
-impl Session {
-    pub async fn new(room: Room, role: Role) -> Self {
-        // TODO parameterize this
-        let mut transport_options =
-            WebRtcTransportOptions::new(TransportListenIps::new(TransportListenIp {
-                ip: "0.0.0.0".parse().unwrap(),
-                announced_ip: "192.168.140.136".parse().ok(),
-            }));
-        transport_options.enable_sctp = true; // required for data channel
+#[derive(Default)]
+struct Handlers {
+    closed: BagOnce<Box<dyn FnOnce(SessionId) + Send + Sync + 'static>>,
+}
 
+impl Session {
+    pub async fn new(room: Room, role: Role, transport_options: WebRtcTransportOptions) -> Self {
         let router = room.get_router();
         // create "bidirectional" transport
         let send_transport = router
@@ -87,9 +85,11 @@ impl Session {
                     data_consumers: HashMap::new(),
                     data_producers: HashMap::new(),
                 }),
+                handlers: Handlers::default(),
                 id: Uuid::new_v4(),
                 role: role,
-                room: room.downgrade(),
+                privileged: false, // TODO from token
+                room: room,
                 send_transport: send_transport,
                 recv_transport: recv_transport,
             }),
@@ -106,7 +106,7 @@ impl Session {
                 dtls_parameters: dtls_parameters,
             })
             .await?;
-        log::info!(
+        log::debug!(
             "connected transport {} from session {}",
             transport.id(),
             self.id()
@@ -134,7 +134,7 @@ impl Session {
             .await
             .unwrap()?;
 
-        log::info!(
+        log::debug!(
             "new consumer created {} for session {}",
             consumer.id(),
             self.id()
@@ -174,7 +174,7 @@ impl Session {
                 if let Some((session, producer)) =
                     weak_session.upgrade().zip(weak_producer.upgrade())
                 {
-                    log::info!("removing closed producer {}", producer.id());
+                    log::debug!("removing closed producer {}", producer.id());
                     session.remove_producer(&producer);
                 }
             })
@@ -184,7 +184,7 @@ impl Session {
 
         let room = self.get_room();
         room.announce_producer(producer.id());
-        log::info!(
+        log::debug!(
             "new producer available {} for session {}",
             producer.id(),
             self.id()
@@ -206,7 +206,7 @@ impl Session {
             .await
             .unwrap()?;
 
-        log::info!(
+        log::debug!(
             "new data consumer created {} for session {}",
             data_consumer.id(),
             self.id()
@@ -238,7 +238,7 @@ impl Session {
                 if let Some((session, data_producer)) =
                     weak_session.upgrade().zip(weak_data_producer.upgrade())
                 {
-                    log::info!("removing closed data producer {}", data_producer.id());
+                    log::debug!("removing closed data producer {}", data_producer.id());
                     session.remove_data_producer(&data_producer);
                 }
             })
@@ -248,7 +248,7 @@ impl Session {
 
         let room = self.get_room();
         room.announce_data_producer(data_producer.id());
-        log::info!(
+        log::debug!(
             "new data producer available {} for session {}",
             data_producer.id(),
             self.id()
@@ -260,16 +260,26 @@ impl Session {
     pub fn id(&self) -> SessionId {
         self.shared.id
     }
-    pub fn get_role(&self) -> Role {
+    pub fn role(&self) -> Role {
         self.shared.role
     }
+    pub fn is_privileged(&self) -> bool {
+        self.shared.privileged
+    }
     pub fn get_room(&self) -> Room {
-        self.shared.room.upgrade().unwrap()
+        self.shared.room.clone()
     }
     pub fn downgrade(&self) -> WeakSession {
         WeakSession {
             shared: Arc::downgrade(&self.shared),
         }
+    }
+
+    pub fn on_closed<F: FnOnce(SessionId) + Send + Sync + 'static>(
+        &self,
+        callback: F,
+    ) -> HandlerId {
+        self.shared.handlers.closed.add(Box::new(callback))
     }
 
     pub fn get_send_transport(&self) -> WebRtcTransport {
@@ -345,6 +355,12 @@ impl WeakSession {
     pub fn upgrade(&self) -> Option<Session> {
         let shared = self.shared.upgrade()?;
         Some(Session { shared })
+    }
+}
+impl Drop for Shared {
+    fn drop(&mut self) {
+        log::debug!("dropped session {}", self.id);
+        self.handlers.closed.call(|callback| callback(self.id));
     }
 }
 
