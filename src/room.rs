@@ -1,15 +1,12 @@
 use futures::stream::{self, Stream, StreamExt};
 use std::collections::HashMap;
-use std::num::{NonZeroU32, NonZeroU8};
 use std::sync::{Arc, Mutex, Weak};
 
 use anyhow::{anyhow, Result};
 use mediasoup::data_producer::DataProducerId;
 use mediasoup::producer::ProducerId;
 use mediasoup::router::{Router, RouterOptions};
-use mediasoup::rtp_parameters::{
-    MimeTypeAudio, MimeTypeVideo, RtcpFeedback, RtpCodecCapability, RtpCodecParametersParameters,
-};
+use mediasoup::rtp_parameters::RtpCodecCapability;
 use mediasoup::worker::Worker;
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
@@ -42,9 +39,9 @@ struct State {
 }
 
 impl Room {
-    pub async fn new(room_id: RoomId, worker: Worker) -> Self {
+    pub async fn new(room_id: RoomId, worker: Worker, codecs: Vec<RtpCodecCapability>) -> Self {
         let router = worker
-            .create_router(RouterOptions::new(media_codecs()))
+            .create_router(RouterOptions::new(codecs))
             .await
             .unwrap();
         Self {
@@ -159,30 +156,4 @@ impl Drop for Shared {
     fn drop(&mut self) {
         log::debug!("dropped room {}", self.id)
     }
-}
-
-fn media_codecs() -> Vec<RtpCodecCapability> {
-    vec![
-        RtpCodecCapability::Audio {
-            mime_type: MimeTypeAudio::Opus,
-            preferred_payload_type: None,
-            clock_rate: NonZeroU32::new(48000).unwrap(),
-            channels: NonZeroU8::new(2).unwrap(),
-            parameters: RtpCodecParametersParameters::from([("useinbandfec", 1u32.into())]),
-            rtcp_feedback: vec![RtcpFeedback::TransportCc],
-        },
-        RtpCodecCapability::Video {
-            mime_type: MimeTypeVideo::Vp8,
-            preferred_payload_type: None,
-            clock_rate: NonZeroU32::new(90000).unwrap(),
-            parameters: RtpCodecParametersParameters::default(),
-            rtcp_feedback: vec![
-                RtcpFeedback::Nack,
-                RtcpFeedback::NackPli,
-                RtcpFeedback::CcmFir,
-                RtcpFeedback::GoogRemb,
-                RtcpFeedback::TransportCc,
-            ],
-        },
-    ]
 }

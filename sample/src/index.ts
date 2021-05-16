@@ -11,6 +11,9 @@ declare global {
     interface HTMLCanvasElement {
         captureStream(frameRate?: number): MediaStream;
     }
+    class CanvasCaptureMediaStreamTrack extends MediaStreamTrack{
+        requestFrame(): void;
+    }
 }
 
 // please forgive me, this is the first thing i've ever written in typescript
@@ -245,16 +248,19 @@ async function session(role: Role) {
                 //         }
                 //     }
                 // });
-                const mediaStream = canvas.captureStream(60);
+                const mediaStream = canvas.captureStream(0);
+                var videoTrack = mediaStream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack;
                 var ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
-                setInterval(() => {
-                    ctx.fillStyle = "#" + Math.floor(Math.random()*16777215).toString(16);
-                    ctx.fillRect(
-                        Math.floor(Math.random() * 640) - 640 / 2,
-                        Math.floor(Math.random() * 480) - 480 / 2,
-                        Math.floor(Math.random() * 640),
-                        Math.floor(Math.random() * 480));
-                }, 100);
+                function draw() {
+                    ctx.fillStyle = "#000000";
+                    ctx.fillRect(0, 0, 640, 480);
+                    ctx.font = "30px Arial";
+                    ctx.fillStyle = "#" + Math.floor(Math.random() * 16777215).toString(16);
+                    ctx.fillText(new Date().getTime() + "", 10, 30);
+                    videoTrack.requestFrame();
+                    window.requestAnimationFrame(draw);
+                }
+                window.requestAnimationFrame(draw);
                 sendPreview.srcObject = mediaStream;
 
                 // create producers for each media track

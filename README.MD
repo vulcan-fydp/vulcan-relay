@@ -1,6 +1,7 @@
 # vulcan-relay
 
 ## Build
+### Ad-hoc
 - Linux only
 ```
 git clone https://github.com/vulcan-fydp/vulcan-relay.git
@@ -15,6 +16,19 @@ In most cases, this will be a public IPv4 address.
 Ports 10000-59999 (TCP/UDP) must be open for ingress/egress traffic to the interface assigned to the RTC Announce IP. 
 
 To dump the procedurally generated GraphQL signalling schema, run `cargo run -- schema`.
+
+### Docker
+- Certificates must be mounted somewhere in the container and specified as arguments
+- `--network=host` is recommended
+```
+docker build -t vulcan-relay .
+docker run -d vulcan-relay
+```
+
+Full example for clients connecting within private subnet 192.168.140.0/24:
+```
+docker run -it --init --rm --name relay --network=host -v /mnt/scratch/vulcan-relay/config:/config -e RUST_BACKTRACE=1 vulcan-relay run --cert-path /config/cert.pem --key-path /config/key.pem --rtc-ip 0.0.0.0 --rtc-announce-ip 192.168.140.136 --listen-addr 0.0.0.0:8443
+```
 
 ## Sample
 - Sample web application using mediasoup-client which emulates a Vulcast/Web Client from the perspective of the Relay

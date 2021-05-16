@@ -2,9 +2,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
+use mediasoup::rtp_parameters::RtpCodecCapability;
+use mediasoup::webrtc_transport::WebRtcTransportOptions;
 use mediasoup::worker::{Worker, WorkerSettings};
 use mediasoup::worker_manager::WorkerManager;
-use mediasoup::webrtc_transport::WebRtcTransportOptions;
 use tokio::sync::Mutex;
 
 use crate::room::{Room, RoomId, WeakRoom};
@@ -19,6 +20,7 @@ struct Shared {
     state: Mutex<State>, // async mutex
 
     transport_options: WebRtcTransportOptions,
+    media_codecs: Vec<RtpCodecCapability>,
     worker: Worker,
 }
 
@@ -27,7 +29,10 @@ struct State {
 }
 
 impl RelayServer {
-    pub async fn new(transport_options: WebRtcTransportOptions) -> Self {
+    pub async fn new(
+        transport_options: WebRtcTransportOptions,
+        media_codecs: Vec<RtpCodecCapability>,
+    ) -> Self {
         let worker_manager = WorkerManager::new();
         let worker = worker_manager
             .create_worker(WorkerSettings::default())
@@ -38,6 +43,7 @@ impl RelayServer {
                 state: Mutex::new(State {
                     rooms: HashMap::new(),
                 }),
+                media_codecs: media_codecs,
                 transport_options: transport_options,
                 worker: worker,
             }),
@@ -55,14 +61,24 @@ impl RelayServer {
         }
 
         log::debug!("created new room {}", &room_id);
-        let room = Room::new(room_id.clone(), self.shared.worker.clone()).await;
+        let room = Room::new(
+            room_id.clone(),
+            self.shared.worker.clone(),
+            self.shared.media_codecs.clone(),
+        )
+        .await;
         state.rooms.insert(room_id, room.downgrade());
         room
     }
 
     pub async fn session_from_token(&self, token: SessionToken) -> Result<Session> {
         let room = self.get_or_create_room(token.room_id).await;
-        let session = Session::new(room.clone(), token.role, self.shared.transport_options.clone()).await;
+        let session = Session::new(
+            room.clone(),
+            token.role,
+            self.shared.transport_options.clone(),
+        )
+        .await;
 
         room.add_session(session.clone())?;
 
