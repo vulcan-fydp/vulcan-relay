@@ -2,11 +2,10 @@
 
 use futures::{FutureExt, TryFutureExt};
 use std::rc::Rc;
-use tokio_util::task;
 
 #[tokio::test]
 async fn can_spawn_not_send_future() {
-    let pool = task::new_local_pool(1);
+    let pool = tokio_local::new_local_pool(1);
 
     let output = pool
         .spawn_pinned(|| {
@@ -25,12 +24,12 @@ async fn can_spawn_not_send_future() {
 #[test]
 #[should_panic(expected = "assertion failed: pool_size > 0")]
 fn cannot_create_zero_sized_pool() {
-    let _pool = task::new_local_pool(0);
+    let _pool = tokio_local::new_local_pool(0);
 }
 
 #[tokio::test]
 async fn can_spawn_multiple_futures() {
-    let pool = task::new_local_pool(2);
+    let pool = tokio_local::new_local_pool(2);
 
     let future1 = pool
         .spawn_pinned(|| {

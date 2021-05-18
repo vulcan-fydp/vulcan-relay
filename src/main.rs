@@ -1,25 +1,19 @@
+use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::num::{NonZeroU32, NonZeroU8};
 
-use async_graphql::Data;
-use async_graphql_warp::{graphql_protocol, graphql_subscription_upgrade_with_data};
 use clap::Clap;
-use warp::Filter;
 use mediasoup::data_structures::TransportListenIp;
 use mediasoup::rtp_parameters::{
     MimeTypeAudio, MimeTypeVideo, RtcpFeedback, RtpCodecCapability, RtpCodecParametersParameters,
 };
 use mediasoup::webrtc_transport::{TransportListenIps, WebRtcTransportOptions};
+use warp::Filter;
 
-use crate::cmdline::{Opts, SubCommand};
-use crate::relay_server::RelayServer;
-use crate::session::SessionToken;
-
-mod cmdline;
-mod relay_server;
-mod room;
-mod session;
-mod signal_schema;
+use vulcan_relay::cmdline::{Opts, SubCommand};
+use vulcan_relay::relay_server::RelayServer;
+use vulcan_relay::session::SessionToken;
+use vulcan_relay::signal_schema::SignalSchema;
 
 #[tokio::main]
 async fn main() {
@@ -29,7 +23,7 @@ async fn main() {
 
     let opts: Opts = Opts::parse();
 
-    let schema = signal_schema::schema();
+    let schema = vulcan_relay::signal_schema::schema();
 
     match opts.subcmd {
         SubCommand::Schema => {
@@ -42,6 +36,7 @@ async fn main() {
                     announced_ip: opts.rtc_announce_ip.and_then(|x| x.parse().ok()),
                 }));
             transport_options.enable_sctp = true; // required for data channel
+            
             let media_codecs = vec![
                 RtpCodecCapability::Audio {
                     mime_type: MimeTypeAudio::Opus,
@@ -71,37 +66,42 @@ async fn main() {
 
             let relay_server = RelayServer::new(transport_options, media_codecs).await;
 
-            let routes =
-                warp::ws()
-                    .and(graphql_protocol())
-                    .map(move |ws: warp::ws::Ws, protocol| {
-                        let schema = schema.clone();
-                        let relay_server = relay_server.clone();
+            let graphql_post = async_graphql_warp::graphql(schema.clone()).and_then(
+                |(schema, request): (SignalSchema, async_graphql::Request)| async move {
+                    Ok::<_, Infallible>(async_graphql_warp::Response::from(
+                        schema.execute(request).await,
+                    ))
+                },
+            );
+            let graphql_ws = warp::ws().and(async_graphql_warp::graphql_protocol()).map(
+                move |ws: warp::ws::Ws, protocol| {
+                    let schema = schema.clone();
+                    let relay_server = relay_server.clone();
 
-                        let reply = ws.on_upgrade(move |websocket| async move {
-                            graphql_subscription_upgrade_with_data(
-                                websocket,
-                                protocol,
-                                schema,
-                                |value| async move {
-                                    let mut data = Data::default();
-                                    if let Ok(token) = serde_json::from_value::<SessionToken>(value)
-                                    {
-                                        let session =
-                                            relay_server.session_from_token(token).await?;
-                                        data.insert(session.clone());
-                                    }
-                                    Ok(data)
-                                },
-                            )
-                            .await;
-                        });
-                        warp::reply::with_header(
-                            reply,
-                            "Sec-WebSocket-Protocol",
-                            protocol.sec_websocket_protocol(),
+                    let reply = ws.on_upgrade(move |websocket| async move {
+                        async_graphql_warp::graphql_subscription_upgrade_with_data(
+                            websocket,
+                            protocol,
+                            schema,
+                            |value| async move {
+                                let mut data = async_graphql::Data::default();
+                                if let Ok(token) = serde_json::from_value::<SessionToken>(value) {
+                                    let session = relay_server.session_from_token(token).await?;
+                                    data.insert(session.clone());
+                                }
+                                Ok(data)
+                            },
                         )
+                        .await;
                     });
+                    warp::reply::with_header(
+                        reply,
+                        "Sec-WebSocket-Protocol",
+                        protocol.sec_websocket_protocol(),
+                    )
+                },
+            );
+            let routes = graphql_ws.or(graphql_post);
             warp::serve(routes.with(warp::log("warp-server")))
                 .tls()
                 .cert_path(opts.cert_path)

@@ -30,12 +30,6 @@ warp = { version = "0.3", features = ["tls"] }
 async-graphql = "2.8.4"
 async-graphql-warp = "2.8.4"
 
-[dev-dependencies]
-actix = "0.10.0"
-actix-web = { version = "3.3.2", features = ["openssl"] }
-actix-web-actors = "3.0.0"
-openssl = { version = "0.10", features = ["v110"] }
-
 [workspace]
 members = [
     "tokio-local"

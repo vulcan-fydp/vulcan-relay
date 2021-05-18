@@ -20,7 +20,7 @@ declare global {
 
 const sendPreview = document.querySelector('#preview-send') as HTMLVideoElement;
 const receivePreview = document.querySelector('#preview-receive') as HTMLVideoElement;
-const canvas = document.querySelector('canvas') as HTMLCanvasElement;
+// const canvas = document.querySelector('canvas') as HTMLCanvasElement;
 
 sendPreview.onloadedmetadata = () => {
     sendPreview.play();
@@ -234,33 +234,33 @@ async function session(role: Role) {
                 });
 
                 // create a webcam/mic combo for testing (would be cap card output from Vulcast)
-                // const mediaStream = await navigator.mediaDevices.getUserMedia({
-                //     audio: true,
-                //     video: {
-                //         width: {
-                //             ideal: 1270
-                //         },
-                //         height: {
-                //             ideal: 720
-                //         },
-                //         frameRate: {
-                //             ideal: 60
-                //         }
-                //     }
-                // });
-                const mediaStream = canvas.captureStream(0);
-                var videoTrack = mediaStream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack;
-                var ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
-                function draw() {
-                    ctx.fillStyle = "#000000";
-                    ctx.fillRect(0, 0, 640, 480);
-                    ctx.font = "30px Arial";
-                    ctx.fillStyle = "#" + Math.floor(Math.random() * 16777215).toString(16);
-                    ctx.fillText(new Date().getTime() + "", 10, 30);
-                    videoTrack.requestFrame();
-                    window.requestAnimationFrame(draw);
-                }
-                window.requestAnimationFrame(draw);
+                const mediaStream = await navigator.mediaDevices.getUserMedia({
+                    audio: true,
+                    video: {
+                        width: {
+                            ideal: 1270
+                        },
+                        height: {
+                            ideal: 720
+                        },
+                        frameRate: {
+                            ideal: 60
+                        }
+                    }
+                });
+                // const mediaStream = canvas.captureStream(0);
+                // var videoTrack = mediaStream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack;
+                // var ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+                // function draw() {
+                //     ctx.fillStyle = "#000000";
+                //     ctx.fillRect(0, 0, 640, 480);
+                //     ctx.font = "30px Arial";
+                //     ctx.fillStyle = "#" + Math.floor(Math.random() * 16777215).toString(16);
+                //     ctx.fillText(new Date().getTime() + "", 10, 30);
+                //     videoTrack.requestFrame();
+                //     window.requestAnimationFrame(draw);
+                // }
+                // window.requestAnimationFrame(draw);
                 sendPreview.srcObject = mediaStream;
 
                 // create producers for each media track

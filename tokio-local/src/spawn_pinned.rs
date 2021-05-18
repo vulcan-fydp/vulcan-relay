@@ -38,7 +38,7 @@ impl LocalPoolHandle {
     ///
     /// ```
     /// use std::rc::Rc;
-    /// use tokio_util::task::new_local_pool;
+    /// use tokio_local::new_local_pool;
     ///
     /// #[tokio::main]
     /// async fn main() {
