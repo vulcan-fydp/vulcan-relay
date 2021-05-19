@@ -50,7 +50,7 @@ impl Room {
                     sessions: HashMap::new(),
                 }),
                 id: room_id,
-                router: router,
+                router,
                 producer_available_tx: broadcast::channel(16).0,
                 data_producer_available_tx: broadcast::channel(16).0,
             }),

@@ -7,6 +7,8 @@ use vulcan_relay::session::{Role, SessionToken};
 
 mod fixture;
 
+// TODO malformed data tests
+
 #[tokio::test]
 async fn producer_consumer_connected_after_signalling() {
     let relay_server =

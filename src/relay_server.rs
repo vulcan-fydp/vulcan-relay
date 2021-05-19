@@ -43,9 +43,9 @@ impl RelayServer {
                 state: Mutex::new(State {
                     rooms: HashMap::new(),
                 }),
-                media_codecs: media_codecs,
-                transport_options: transport_options,
-                worker: worker,
+                media_codecs,
+                transport_options,
+                worker,
             }),
         }
     }

@@ -36,7 +36,7 @@ async fn main() {
                     announced_ip: opts.rtc_announce_ip.and_then(|x| x.parse().ok()),
                 }));
             transport_options.enable_sctp = true; // required for data channel
-            
+
             let media_codecs = vec![
                 RtpCodecCapability::Audio {
                     mime_type: MimeTypeAudio::Opus,
@@ -87,7 +87,7 @@ async fn main() {
                                 let mut data = async_graphql::Data::default();
                                 if let Ok(token) = serde_json::from_value::<SessionToken>(value) {
                                     let session = relay_server.session_from_token(token).await?;
-                                    data.insert(session.clone());
+                                    data.insert(session);
                                 }
                                 Ok(data)
                             },

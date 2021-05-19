@@ -7,7 +7,7 @@ use mediasoup::transport::Transport;
 
 use crate::session::{Role, Session};
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Default)]
 pub struct QueryRoot;
 #[Object]
 impl QueryRoot {
@@ -171,7 +171,7 @@ impl SubscriptionRoot {
     ) -> async_graphql::Result<impl Stream<Item = ProducerId>> {
         let session = ctx.data_unchecked::<Session>();
         let room = session.get_room();
-        Ok(room.available_producers().map(|x| ProducerId(x)))
+        Ok(room.available_producers().map(ProducerId))
     }
     /// Notify when new data producers are available
     #[graphql(guard(RoleGuard(role = "Role::Vulcast")))]
@@ -181,7 +181,7 @@ impl SubscriptionRoot {
     ) -> async_graphql::Result<impl Stream<Item = DataProducerId>> {
         let session = ctx.data_unchecked::<Session>();
         let room = session.get_room();
-        Ok(room.available_data_producers().map(|x| DataProducerId(x)))
+        Ok(room.available_data_producers().map(DataProducerId))
     }
 }
 
@@ -216,18 +216,6 @@ impl Guard for RoleGuard {
         }
     }
 }
-
-struct PrivilegeGuard ;
-#[async_trait::async_trait]
-impl Guard for PrivilegeGuard {
-    async fn check(&self, ctx: &Context<'_>) -> Result<()> {
-        match ctx.data_opt::<Session>() {
-            Some(session) if session.is_privileged() => Ok(()),
-            _ => Err(format!("requires privileged session").into()),
-        }
-    }
-}
-
 
 #[derive(Deserialize, Serialize, Clone, Copy)]
 #[serde(transparent)]
