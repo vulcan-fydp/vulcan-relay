@@ -87,7 +87,7 @@ async fn main() {
                                 let mut data = async_graphql::Data::default();
                                 if let Ok(token) = serde_json::from_value::<SessionToken>(value) {
                                     let session = relay_server.session_from_token(token).await?;
-                                    data.insert(session.clone());
+                                    data.insert(session);
                                 }
                                 Ok(data)
                             },

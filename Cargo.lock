@@ -962,8 +962,7 @@ checksum = "7ffc5c5338469d4d3ea17d269fa8ea3512ad247247c30bd2df69e68309ed0a08"
 [[package]]
 name = "mediasoup"
 version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3190a138d5a99cf348b9a19d3da9c11c8a1ec7011d6950f599047dc4cd751789"
+source = "git+https://github.com/versatica/mediasoup?branch=v3#54b2f4c58d56a5930031fd9d083c29ac68880b9d"
 dependencies = [
  "async-channel",
  "async-executor",
@@ -994,8 +993,7 @@ dependencies = [
 [[package]]
 name = "mediasoup-sys"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ba6a8b7ce4c04aeef63082d191ffaf4d35ba8db410bd68ebeecaa10261486c1"
+source = "git+https://github.com/versatica/mediasoup?branch=v3#54b2f4c58d56a5930031fd9d083c29ac68880b9d"
 
 [[package]]
 name = "memchr"
@@ -2008,7 +2006,6 @@ dependencies = [
  "anyhow",
  "async-graphql",
  "async-graphql-warp",
- "async-stream",
  "async-trait",
  "clap",
  "env_logger",
@@ -2018,7 +2015,6 @@ dependencies = [
  "mediasoup",
  "serde",
  "serde_json",
- "serde_repr",
  "thiserror",
  "tokio",
  "tokio-local",

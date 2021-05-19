@@ -87,11 +87,11 @@ impl Session {
                 }),
                 handlers: Handlers::default(),
                 id: Uuid::new_v4(),
-                role: role,
+                role,
                 privileged: false, // TODO from token
-                room: room,
-                send_transport: send_transport,
-                recv_transport: recv_transport,
+                room,
+                send_transport,
+                recv_transport,
             }),
         }
     }
@@ -102,9 +102,7 @@ impl Session {
         dtls_parameters: DtlsParameters,
     ) -> Result<TransportId> {
         transport
-            .connect(WebRtcTransportRemoteParameters {
-                dtls_parameters: dtls_parameters,
-            })
+            .connect(WebRtcTransportRemoteParameters { dtls_parameters })
             .await?;
         log::debug!(
             "connected transport {} from session {}",
@@ -123,7 +121,7 @@ impl Session {
         // make sure client has provided rtp caps
         let rtp_capabilities = self
             .get_rtp_capabilities()
-            .ok_or(anyhow!("missing rtp capabilities"))?;
+            .ok_or_else(|| anyhow!("missing rtp capabilities"))?;
 
         // initialize consumer as paused (recommended by mediasoup docs)
         let mut options = ConsumerOptions::new(producer_id, rtp_capabilities);

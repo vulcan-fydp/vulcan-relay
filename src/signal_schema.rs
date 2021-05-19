@@ -171,7 +171,7 @@ impl SubscriptionRoot {
     ) -> async_graphql::Result<impl Stream<Item = ProducerId>> {
         let session = ctx.data_unchecked::<Session>();
         let room = session.get_room();
-        Ok(room.available_producers().map(|x| ProducerId(x)))
+        Ok(room.available_producers().map(ProducerId))
     }
     /// Notify when new data producers are available
     #[graphql(guard(RoleGuard(role = "Role::Vulcast")))]
@@ -181,7 +181,7 @@ impl SubscriptionRoot {
     ) -> async_graphql::Result<impl Stream<Item = DataProducerId>> {
         let session = ctx.data_unchecked::<Session>();
         let room = session.get_room();
-        Ok(room.available_data_producers().map(|x| DataProducerId(x)))
+        Ok(room.available_data_producers().map(DataProducerId))
     }
 }
 
