@@ -36,7 +36,7 @@ async fn main() {
                     announced_ip: opts.rtc_announce_ip.and_then(|x| x.parse().ok()),
                 }));
             transport_options.enable_sctp = true; // required for data channel
-            
+
             let media_codecs = vec![
                 RtpCodecCapability::Audio {
                     mime_type: MimeTypeAudio::Opus,

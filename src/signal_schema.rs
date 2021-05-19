@@ -7,7 +7,7 @@ use mediasoup::transport::Transport;
 
 use crate::session::{Role, Session};
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Default)]
 pub struct QueryRoot;
 #[Object]
 impl QueryRoot {
@@ -216,18 +216,6 @@ impl Guard for RoleGuard {
         }
     }
 }
-
-struct PrivilegeGuard ;
-#[async_trait::async_trait]
-impl Guard for PrivilegeGuard {
-    async fn check(&self, ctx: &Context<'_>) -> Result<()> {
-        match ctx.data_opt::<Session>() {
-            Some(session) if session.is_privileged() => Ok(()),
-            _ => Err(format!("requires privileged session").into()),
-        }
-    }
-}
-
 
 #[derive(Deserialize, Serialize, Clone, Copy)]
 #[serde(transparent)]
