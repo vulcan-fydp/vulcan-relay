@@ -310,7 +310,7 @@ impl Session {
     }
     pub fn remove_producer(&self, producer: &Producer) {
         let mut state = self.shared.state.lock().unwrap();
-        state
+        let _ = state
             .producers
             .remove(&producer.id())
             .expect("producer does not exist");
@@ -328,7 +328,7 @@ impl Session {
     }
     pub fn remove_data_producer(&self, data_producer: &DataProducer) {
         let mut state = self.shared.state.lock().unwrap();
-        state
+        let _ = state
             .data_producers
             .remove(&data_producer.id())
             .expect("data producer does not exist");
