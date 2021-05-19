@@ -24,19 +24,19 @@ jobs:
 
       - run: rustup component add rustfmt
       - name: Rustfmt
-      - uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@v1
         with:
           command: fmt
           args: --all -- --check
 
       - run: rustup component add clippy
       - name: Clippy
-      - uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@v1
         with:
           command: clippy
           args: -- -D warnings
 
       - name: Test Suite
-      - uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@v1
         with:
           command: test
