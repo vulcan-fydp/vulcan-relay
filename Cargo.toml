@@ -3,6 +3,7 @@ name = "vulcan-relay"
 version = "0.1.0"
 authors = ["netdex"]
 edition = "2018"
+default-run = "vulcan-relay"
 
 # there's a bug that prevents compiling w/ gcc11 with an upstream fix
 [patch.crates-io]
