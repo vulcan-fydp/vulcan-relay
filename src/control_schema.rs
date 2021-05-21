@@ -4,7 +4,7 @@ use async_graphql::{Context, EmptySubscription, Object, Result, Schema, SimpleOb
 pub struct QueryRoot;
 #[Object]
 impl QueryRoot {
-    async fn dummy(&self, ctx: &Context<'_>) -> Result<bool> {
+    async fn dummy(&self, _ctx: &Context<'_>) -> Result<bool> {
         Ok(true)
     }
 }
@@ -17,9 +17,9 @@ impl MutationRoot {
     /// This will fail if the specified Vulcast is already tied to an existing room.
     async fn register_room(
         &self,
-        ctx: &Context<'_>,
-        room_id: ID,
-        vulcast_session_id: ID,
+        _ctx: &Context<'_>,
+        _room_id: ID,
+        _vulcast_session_id: ID,
     ) -> Result<RegisterRoomResult> {
         todo!();
     }
@@ -27,40 +27,40 @@ impl MutationRoot {
     /// This will also unregister all sessions associated with this room.
     async fn unregister_room(
         &self,
-        ctx: &Context<'_>,
-        room_id: ID,
+        _ctx: &Context<'_>,
+        _room_id: ID,
     ) -> Result<UnregisterRoomResult> {
         todo!();
     }
     /// Register a Vulcast with the given session ID.
     /// This is intended to be done once, when the Vulcast is powered on.
-    /// The session ID remains valid until unregistered.
-    /// The Vulcast will be able to connect to this relay with the session ID.
+    /// The session and corresponding token remains valid until unregistered.
+    /// Vulcasts can present the returned token to connect to the Relay.
     async fn register_vulcast_session(
         &self,
-        ctx: &Context<'_>,
-        session_id: ID,
+        _ctx: &Context<'_>,
+        _session_id: ID,
     ) -> Result<RegisterSessionResult> {
         todo!();
     }
     /// Register a web client session attached to a specific room, identifed by its room ID.
-    /// Web clients can present this session ID to connect to the Relay,
+    /// The session and corresponding token remains valid until unregistered.
+    /// Web clients can present the returned token to connect to the Relay,
     /// which will automatically place them in the correct room.
-    /// The session ID remains valid until unregistered.
     async fn register_client_session(
         &self,
-        ctx: &Context<'_>,
-        room_id: ID,
-        session_id: ID,
+        _ctx: &Context<'_>,
+        _room_id: ID,
+        _session_id: ID,
     ) -> Result<RegisterSessionResult> {
         todo!();
     }
     /// Unregister a session by its session ID.
-    /// This will also terminate all active connections made with this session ID.
+    /// This will also terminate all active connections made with this session.
     async fn unregister_session(
         &self,
-        ctx: &Context<'_>,
-        session_id: ID,
+        _ctx: &Context<'_>,
+        _session_id: ID,
     ) -> Result<UnregisterSessionResult> {
         todo!();
     }
@@ -74,6 +74,7 @@ struct Room {
 #[derive(SimpleObject)]
 struct Session {
     id: ID,
+    access_token: ID,
 }
 
 /// The Vulcast is already in another room.
