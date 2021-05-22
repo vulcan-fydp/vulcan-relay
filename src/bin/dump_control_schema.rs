@@ -1,6 +1,5 @@
-use vulcan_relay::control_schema;
+use vulcan_relay::control_schema::ControlSchema;
 
 fn main() {
-    let schema = control_schema::schema();
-    println!("{}", &schema.sdl());
+    println!("{}", &ControlSchema::default().sdl());
 }

@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["netdex"]
 edition = "2018"
 default-run = "vulcan-relay"
+build = "build.rs"
 
 # there's a bug that prevents compiling w/ gcc11 with an upstream fix
 [patch.crates-io]
@@ -22,6 +23,8 @@ thiserror = "1.0"
 anyhow = "1.0"
 event-listener-primitives = "0.2.2"
 clap = "3.0.0-beta.2"
+bimap = "0.6.1"
+derive_more = "0.99.0"
 
 tokio = { version = "1.0.2", features = ["macros", "rt-multi-thread", "sync"] }
 tokio-stream = { version = "0.1.5", features = ["sync"] }
@@ -33,7 +36,8 @@ warp = { version = "0.3", features = ["tls"] }
 async-graphql = "2.8.4"
 async-graphql-warp = "2.8.4"
 
+[build-dependencies]
+built = "0.5"
+
 [workspace]
-members = [
-    "tokio-local"
-]
+members = ["tokio-local"]

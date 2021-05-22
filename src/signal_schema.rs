@@ -5,7 +5,7 @@ use async_graphql::guard::Guard;
 use async_graphql::{scalar, Context, Object, Result, Schema, SimpleObject, Subscription};
 use mediasoup::transport::Transport;
 
-use crate::session::{Role, Session};
+use crate::session::{Role, WeakSession};
 
 #[derive(Default)]
 pub struct QueryRoot;
@@ -14,10 +14,11 @@ impl QueryRoot {
     /// Obtain initialization parameters for client-side mediasoup device
     #[graphql(guard(SessionGuard()))]
     async fn init(&self, ctx: &Context<'_>) -> ServerInitParameters {
-        let session = ctx.data_unchecked::<Session>();
+        let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
         let room = session.get_room();
-        let send_transport = session.get_send_transport();
-        let recv_transport = session.get_recv_transport();
+        let send_transport = session.get_send_transport().await;
+        let recv_transport = session.get_recv_transport().await;
+        let router = room.get_router().await;
         ServerInitParameters {
             send_transport_options: TransportOptions {
                 id: send_transport.id(),
@@ -33,9 +34,7 @@ impl QueryRoot {
                 ice_candidates: recv_transport.ice_candidates().clone(),
                 ice_parameters: recv_transport.ice_parameters().clone(),
             },
-            router_rtp_capabilities: RtpCapabilitiesFinalized(
-                room.get_router().rtp_capabilities().clone(),
-            ),
+            router_rtp_capabilities: RtpCapabilitiesFinalized(router.rtp_capabilities().clone()),
         }
     }
 }
@@ -47,7 +46,7 @@ impl MutationRoot {
     /// Provide initialization parameters for server-side mediasoup device
     #[graphql(guard(SessionGuard()))]
     async fn init(&self, ctx: &Context<'_>, rtp_capabilities: RtpCapabilities) -> Result<bool> {
-        let session = ctx.data_unchecked::<Session>();
+        let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
         session.set_rtp_capabilities(rtp_capabilities.0);
         Ok(true)
     }
@@ -59,11 +58,9 @@ impl MutationRoot {
         ctx: &Context<'_>,
         dtls_parameters: DtlsParameters,
     ) -> Result<TransportId> {
-        let session = ctx.data_unchecked::<Session>();
+        let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
         Ok(TransportId(
-            session
-                .connect_transport(session.get_send_transport(), dtls_parameters.0)
-                .await?,
+            session.connect_send_transport(dtls_parameters.0).await?,
         ))
     }
 
@@ -74,11 +71,9 @@ impl MutationRoot {
         ctx: &Context<'_>,
         dtls_parameters: DtlsParameters,
     ) -> Result<TransportId> {
-        let session = ctx.data_unchecked::<Session>();
+        let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
         Ok(TransportId(
-            session
-                .connect_transport(session.get_recv_transport(), dtls_parameters.0)
-                .await?,
+            session.connect_recv_transport(dtls_parameters.0).await?,
         ))
     }
 
@@ -86,7 +81,7 @@ impl MutationRoot {
     #[graphql(guard(RoleGuard(role = "Role::WebClient")))]
     async fn consume(&self, ctx: &Context<'_>, producer_id: ProducerId) -> Result<ConsumerOptions> {
         let local_pool = ctx.data_unchecked::<tokio_local::LocalPoolHandle>();
-        let session = ctx.data_unchecked::<Session>();
+        let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
         let consumer = session.consume(local_pool.clone(), producer_id.0).await?;
         Ok(ConsumerOptions {
             id: consumer.id(),
@@ -99,7 +94,7 @@ impl MutationRoot {
     /// Resume existing consumer
     #[graphql(guard(RoleGuard(role = "Role::WebClient")))]
     async fn consumer_resume(&self, ctx: &Context<'_>, consumer_id: ConsumerId) -> Result<bool> {
-        let session = ctx.data_unchecked::<Session>();
+        let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
         session.consumer_resume(consumer_id.0).await?;
         Ok(true)
     }
@@ -113,7 +108,7 @@ impl MutationRoot {
         rtp_parameters: RtpParameters,
     ) -> Result<ProducerId> {
         let local_pool = ctx.data_unchecked::<tokio_local::LocalPoolHandle>();
-        let session = ctx.data_unchecked::<Session>();
+        let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
         Ok(ProducerId(
             session
                 .produce(local_pool.clone(), kind.0, rtp_parameters.0)
@@ -130,7 +125,7 @@ impl MutationRoot {
         data_producer_id: DataProducerId,
     ) -> Result<DataConsumerOptions> {
         let local_pool = ctx.data_unchecked::<tokio_local::LocalPoolHandle>();
-        let session = ctx.data_unchecked::<Session>();
+        let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
         let data_consumer = session
             .consume_data(local_pool.clone(), data_producer_id.0)
             .await?;
@@ -149,7 +144,7 @@ impl MutationRoot {
         sctp_stream_parameters: SctpStreamParameters,
     ) -> Result<DataProducerId> {
         let local_pool = ctx.data_unchecked::<tokio_local::LocalPoolHandle>();
-        let session = ctx.data_unchecked::<Session>();
+        let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
         Ok(DataProducerId(
             session
                 .produce_data(local_pool.clone(), sctp_stream_parameters.0)
@@ -169,7 +164,7 @@ impl SubscriptionRoot {
         &self,
         ctx: &Context<'_>,
     ) -> async_graphql::Result<impl Stream<Item = ProducerId>> {
-        let session = ctx.data_unchecked::<Session>();
+        let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
         let room = session.get_room();
         Ok(room.available_producers().map(ProducerId))
     }
@@ -179,7 +174,7 @@ impl SubscriptionRoot {
         &self,
         ctx: &Context<'_>,
     ) -> async_graphql::Result<impl Stream<Item = DataProducerId>> {
-        let session = ctx.data_unchecked::<Session>();
+        let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
         let room = session.get_room();
         Ok(room.available_data_producers().map(DataProducerId))
     }
@@ -197,9 +192,9 @@ struct SessionGuard;
 #[async_trait::async_trait]
 impl Guard for SessionGuard {
     async fn check(&self, ctx: &Context<'_>) -> Result<()> {
-        match ctx.data_opt::<Session>() {
+        match ctx.data_opt::<WeakSession>().and_then(|x| x.upgrade()) {
             Some(_) => Ok(()),
-            None => Err("session is required".into()),
+            None => Err("valid session is required".into()),
         }
     }
 }
@@ -210,7 +205,7 @@ struct RoleGuard {
 #[async_trait::async_trait]
 impl Guard for RoleGuard {
     async fn check(&self, ctx: &Context<'_>) -> Result<()> {
-        match ctx.data_opt::<Session>() {
+        match ctx.data_opt::<WeakSession>().and_then(|x| x.upgrade()) {
             Some(session) if session.role() == self.role => Ok(()),
             _ => Err(format!("requires session with role {:?}", self.role).into()),
         }
