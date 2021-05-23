@@ -14,7 +14,7 @@ use tokio_stream::wrappers::BroadcastStream;
 
 use crate::session::{Role, Session, SessionId, WeakSession};
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Display, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Display, Hash, Default)]
 pub struct RoomId(Uuid);
 impl RoomId {
     pub fn new() -> Self {

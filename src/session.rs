@@ -21,7 +21,7 @@ use tokio::sync::OnceCell;
 
 use crate::room::Room;
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Display, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Display, Hash, Default)]
 pub struct SessionId(Uuid);
 impl SessionId {
     pub fn new() -> Self {

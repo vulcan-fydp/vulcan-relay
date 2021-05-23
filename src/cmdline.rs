@@ -1,5 +1,5 @@
-use clap::{AppSettings, Clap};
 use crate::built_info;
+use clap::{AppSettings, Clap};
 
 #[derive(Clap)]
 #[clap(version = built_info::PKG_VERSION, author = built_info::PKG_AUTHORS)]

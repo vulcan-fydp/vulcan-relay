@@ -171,14 +171,12 @@ impl RelayServer {
             .unwrap_or_else(|| {
                 Room::new(self.shared.worker.clone(), self.shared.media_codecs.clone())
             });
-        state
-            .rooms
-            .insert(vulcast_session_id.clone(), room.downgrade()); // may re-insert
+        state.rooms.insert(vulcast_session_id, room.downgrade()); // may re-insert
 
         // create and bind session to room
         let session = Session::new(
             room.clone(),
-            Role::from(session_options.clone()),
+            Role::from(session_options),
             self.shared.transport_options.clone(),
         );
         room.add_session(session.clone());
@@ -194,7 +192,7 @@ pub struct ForeignRoomId(pub String);
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Display, Hash)]
 pub struct ForeignSessionId(pub String);
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display, Default)]
 pub struct SessionToken(pub Uuid);
 impl SessionToken {
     pub fn new() -> Self {
