@@ -43,16 +43,19 @@ jobs:
 
       - name: Check out schema
         uses: actions/checkout@v2
+        if: github.event_name == 'push'
         with:
           repository: "vulcan-fydp/schema"
           ref: master
           token: ${{ secrets.VULCAN_FYDP_CI_GH_PAT }}
           path: "./backend-schema"
       - name: Dump schema
+        if: github.event_name == 'push'
         run: |
-          cargo run --bin dump_control_schema > ./schema/control_schema.gql
-          cargo run --bin dump_signal_schema > ./schema/signal_schema.gql
+          cargo run --bin dump_control_schema > ./backend-schema/control_schema.gql
+          cargo run --bin dump_signal_schema > ./backend-schema/signal_schema.gql
       - name: Commit schema if changed
+        if: github.event_name == 'push'
         working-directory: ./backend-schema
         run: |
           git add .
