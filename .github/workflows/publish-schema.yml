@@ -1,0 +1,39 @@
+name: Publish relay schemas
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "src/control_schema.rs"
+      - "src/signal_schema.rs"
+jobs:
+  publish_relay_schema:
+    name: Publish relay schemas
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v2
+      - name: Check out backend-schema
+        uses: actions/checkout@v2
+        with:
+          repository: "vulcan-fydp/schema"
+          ref: master
+          token: ${{ secrets.VULCAN_FYDP_CI_GH_PAT }}
+          path: "./schema"
+      - name: Generate control schema
+        run: cargo run --bin dump_control_schema > ./schema/control_schema.gql
+      - name: Generate signal schema
+        run: cargo run --bin dump_signal_schema > ./schema/signal_schema.gql
+      - name: Commit and tag and push
+        run: |
+          cd ./schema
+          if ! git diff-index --quiet HEAD --; then
+            python ./schema/update-version.py
+            VERSION=`cat ./version`
+            git config user.email "vulcanfydp@gmail.com"
+            git config user.name "Vulcan Fydp"
+            git add .
+            git commit -m "Update schema.gql to v$VERSION"
+            git tag -a v$VERSION -m v$VERSION
+            git push origin master --follow-tags
+          fi
