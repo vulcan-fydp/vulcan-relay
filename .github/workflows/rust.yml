@@ -47,18 +47,21 @@ jobs:
           repository: "vulcan-fydp/schema"
           ref: master
           token: ${{ secrets.VULCAN_FYDP_CI_GH_PAT }}
-          path: "./schema"
+          path: "./backend-schema"
       - name: Dump schema
         run: |
           cargo run --bin dump_control_schema > ./schema/control_schema.gql
           cargo run --bin dump_signal_schema > ./schema/signal_schema.gql
       - name: Commit schema if changed
-        working-directory: ./schema
+        working-directory: ./backend-schema
         run: |
           git add .
           if ! git diff-index --quiet HEAD --; then
-            python ./update-version.py
+            cd ..
+            python ./backend-schema/update-version.py
+            cd backend-schema
             VERSION=`cat ./version`
+
             git config user.email "vulcanfydp@gmail.com"
             git config user.name "Vulcan Fydp"
             git commit -m "Update relay schema to v$VERSION"
