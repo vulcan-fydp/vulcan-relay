@@ -58,8 +58,7 @@ jobs:
         if: github.event_name == 'push'
         working-directory: ./backend-schema
         run: |
-          git add .
-          if ! git diff-index --quiet HEAD --; then
+          if [[ `git status --porcelain` ]]; then
             cd ..
             python ./backend-schema/update-version.py
             cd backend-schema
@@ -67,7 +66,7 @@ jobs:
 
             git config user.email "vulcanfydp@gmail.com"
             git config user.name "Vulcan Fydp"
-            git commit -m "Update relay schema to v$VERSION"
+            git commit -am "Update relay schema to v$VERSION"
             git tag -a v$VERSION -m v$VERSION
             git push origin master --follow-tags
           fi
