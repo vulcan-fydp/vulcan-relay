@@ -1,11 +1,23 @@
 use async_graphql::{Context, EmptySubscription, Object, Result, Schema, SimpleObject, Union, ID};
 
+use crate::built_info;
+use crate::relay_server::{
+    ForeignRoomId, ForeignSessionId, RegisterRoomError, RegisterSessionError, RelayServer,
+    SessionOptions, UnregisterRoomError, UnregisterSessionError,
+};
+
 #[derive(Default)]
 pub struct QueryRoot;
 #[Object]
 impl QueryRoot {
-    async fn dummy(&self, _ctx: &Context<'_>) -> Result<bool> {
-        Ok(true)
+    async fn version(&self, _ctx: &Context<'_>) -> String {
+        format!(
+            "{}_{}_{}_{}",
+            built_info::PKG_NAME,
+            built_info::PKG_VERSION,
+            built_info::TARGET,
+            built_info::PROFILE
+        )
     }
 }
 
@@ -17,11 +29,18 @@ impl MutationRoot {
     /// This will fail if the specified Vulcast is already tied to an existing room.
     async fn register_room(
         &self,
-        _ctx: &Context<'_>,
-        _room_id: ID,
-        _vulcast_session_id: ID,
-    ) -> Result<RegisterRoomResult> {
-        todo!();
+        ctx: &Context<'_>,
+        room_id: ID,
+        vulcast_session_id: ID,
+    ) -> RegisterRoomResult {
+        let relay_server = ctx.data_unchecked::<RelayServer>();
+        match relay_server.register_room(
+            ForeignRoomId(room_id.clone().into()),
+            ForeignSessionId(vulcast_session_id.into()),
+        ) {
+            Ok(_) => RegisterRoomResult::Ok(Room { id: room_id }),
+            Err(err) => err.into(),
+        }
     }
     /// Unregister a room with the given ID.
     /// This will also unregister all sessions associated with this room.
@@ -38,10 +57,20 @@ impl MutationRoot {
     /// Vulcasts can present the returned token to connect to the Relay.
     async fn register_vulcast_session(
         &self,
-        _ctx: &Context<'_>,
-        _session_id: ID,
-    ) -> Result<RegisterSessionResult> {
-        todo!();
+        ctx: &Context<'_>,
+        session_id: ID,
+    ) -> RegisterSessionResult {
+        let relay_server = ctx.data_unchecked::<RelayServer>();
+        match relay_server.register_session(
+            ForeignSessionId(session_id.clone().into()),
+            SessionOptions::Vulcast,
+        ) {
+            Ok(session_token) => RegisterSessionResult::Ok(Session {
+                id: session_id,
+                access_token: Some(session_token.into()),
+            }),
+            Err(err) => err.into(),
+        }
     }
     /// Register a web client session attached to a specific room, identifed by its room ID.
     /// The session and corresponding token remains valid until unregistered.
@@ -49,20 +78,37 @@ impl MutationRoot {
     /// which will automatically place them in the correct room.
     async fn register_client_session(
         &self,
-        _ctx: &Context<'_>,
-        _room_id: ID,
-        _session_id: ID,
-    ) -> Result<RegisterSessionResult> {
-        todo!();
+        ctx: &Context<'_>,
+        room_id: ID,
+        session_id: ID,
+    ) -> RegisterSessionResult {
+        let relay_server = ctx.data_unchecked::<RelayServer>();
+        match relay_server.register_session(
+            ForeignSessionId(session_id.clone().into()),
+            SessionOptions::WebClient(ForeignRoomId(room_id.into())),
+        ) {
+            Ok(session_token) => RegisterSessionResult::Ok(Session {
+                id: session_id,
+                access_token: Some(session_token.into()),
+            }),
+            Err(err) => err.into(),
+        }
     }
     /// Unregister a session by its session ID.
     /// This will also terminate all active connections made with this session.
     async fn unregister_session(
         &self,
-        _ctx: &Context<'_>,
-        _session_id: ID,
-    ) -> Result<UnregisterSessionResult> {
-        todo!();
+        ctx: &Context<'_>,
+        session_id: ID,
+    ) -> UnregisterSessionResult {
+        let relay_server = ctx.data_unchecked::<RelayServer>();
+        match relay_server.unregister_session(ForeignSessionId(session_id.clone().into())) {
+            Ok(_) => UnregisterSessionResult::Ok(Session {
+                id: session_id,
+                access_token: None,
+            }),
+            Err(err) => err.into(),
+        }
     }
 }
 
@@ -74,14 +120,13 @@ struct Room {
 #[derive(SimpleObject)]
 struct Session {
     id: ID,
-    access_token: ID,
+    access_token: Option<ID>,
 }
 
 /// The Vulcast is already in another room.
 #[derive(SimpleObject)]
 struct VulcastInRoomError {
     vulcast: Session,
-    room: Room,
 }
 /// The specified room does not exist.
 #[derive(SimpleObject)]
@@ -106,11 +151,51 @@ enum RegisterRoomResult {
     UnknownSession(UnknownSessionError),
     NonUniqueId(NonUniqueIdError),
 }
+impl From<RegisterRoomError> for RegisterRoomResult {
+    fn from(err: RegisterRoomError) -> Self {
+        match err {
+            RegisterRoomError::NonUniqueId(foreign_room_id) => {
+                RegisterRoomResult::NonUniqueId(NonUniqueIdError {
+                    id: foreign_room_id.into(),
+                })
+            }
+            RegisterRoomError::UnknownSession(foreign_session_id) => {
+                RegisterRoomResult::UnknownSession(UnknownSessionError {
+                    session: Session {
+                        id: foreign_session_id.into(),
+                        access_token: None,
+                    },
+                })
+            }
+            RegisterRoomError::VulcastInRoom(foreign_session_id) => {
+                RegisterRoomResult::VulcastInRoom(VulcastInRoomError {
+                    vulcast: Session {
+                        id: foreign_session_id.into(),
+                        access_token: None,
+                    },
+                })
+            }
+        }
+    }
+}
 
 #[derive(Union)]
 enum UnregisterRoomResult {
     Ok(Room),
     UnknownRoom(UnknownRoomError),
+}
+impl From<UnregisterRoomError> for UnregisterRoomResult {
+    fn from(err: UnregisterRoomError) -> Self {
+        match err {
+            UnregisterRoomError::UnknownRoom(foreign_room_id) => {
+                UnregisterRoomResult::UnknownRoom(UnknownRoomError {
+                    room: Room {
+                        id: foreign_room_id.into(),
+                    },
+                })
+            }
+        }
+    }
 }
 
 #[derive(Union)]
@@ -119,15 +204,49 @@ enum RegisterSessionResult {
     UnknownRoom(UnknownRoomError),
     NonUniqueId(NonUniqueIdError),
 }
+impl From<RegisterSessionError> for RegisterSessionResult {
+    fn from(err: RegisterSessionError) -> Self {
+        match err {
+            RegisterSessionError::NonUniqueId(foreign_session_id) => {
+                RegisterSessionResult::NonUniqueId(NonUniqueIdError {
+                    id: foreign_session_id.into(),
+                })
+            }
+            RegisterSessionError::UnknownRoom(foreign_room_id) => {
+                RegisterSessionResult::UnknownRoom(UnknownRoomError {
+                    room: Room {
+                        id: foreign_room_id.into(),
+                    },
+                })
+            }
+        }
+    }
+}
 
 #[derive(Union)]
 enum UnregisterSessionResult {
     Ok(Session),
     UnknownSession(UnknownSessionError),
 }
+impl From<UnregisterSessionError> for UnregisterSessionResult {
+    fn from(err: UnregisterSessionError) -> Self {
+        match err {
+            UnregisterSessionError::UnknownSession(foreign_session_id) => {
+                UnregisterSessionResult::UnknownSession(UnknownSessionError {
+                    session: Session {
+                        id: foreign_session_id.into(),
+                        access_token: None,
+                    },
+                })
+            }
+        }
+    }
+}
 
 pub type ControlSchema = Schema<QueryRoot, MutationRoot, EmptySubscription>;
 
-pub fn schema() -> ControlSchema {
-    ControlSchema::build(QueryRoot, MutationRoot, EmptySubscription).finish()
+pub fn schema(relay_server: RelayServer) -> ControlSchema {
+    ControlSchema::build(QueryRoot, MutationRoot, EmptySubscription)
+        .data(relay_server)
+        .finish()
 }

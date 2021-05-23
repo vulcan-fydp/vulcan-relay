@@ -1,9 +1,9 @@
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
 use uuid::Uuid;
 
 use anyhow::{anyhow, Result};
+use derive_more::Display;
 use event_listener_primitives::{BagOnce, HandlerId};
 use mediasoup::consumer::{Consumer, ConsumerId, ConsumerOptions};
 use mediasoup::data_consumer::{DataConsumer, DataConsumerId, DataConsumerOptions};
@@ -17,10 +17,17 @@ use mediasoup::transport::{Transport, TransportId};
 use mediasoup::webrtc_transport::{
     WebRtcTransport, WebRtcTransportOptions, WebRtcTransportRemoteParameters,
 };
+use tokio::sync::OnceCell;
 
-use crate::room::{Room, RoomId};
+use crate::room::Room;
 
-pub type SessionId = Uuid;
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Display, Hash, Default)]
+pub struct SessionId(Uuid);
+impl SessionId {
+    pub fn new() -> Self {
+        SessionId(Uuid::new_v4())
+    }
+}
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Session {
@@ -38,10 +45,10 @@ struct Shared {
 
     id: SessionId,
     role: Role,
-    privileged: bool,
+    transport_options: WebRtcTransportOptions,
     room: Room,
-    send_transport: WebRtcTransport, // client -> server
-    recv_transport: WebRtcTransport, // server -> client
+    send_transport: OnceCell<WebRtcTransport>, // client -> server
+    recv_transport: OnceCell<WebRtcTransport>, // server -> client
 }
 impl PartialEq for Shared {
     fn eq(&self, other: &Self) -> bool {
@@ -64,18 +71,9 @@ struct Handlers {
 }
 
 impl Session {
-    pub async fn new(room: Room, role: Role, transport_options: WebRtcTransportOptions) -> Self {
-        let router = room.get_router();
-        // create "bidirectional" transport
-        let send_transport = router
-            .create_webrtc_transport(transport_options.clone())
-            .await
-            .unwrap();
-        let recv_transport = router
-            .create_webrtc_transport(transport_options)
-            .await
-            .unwrap();
-
+    pub fn new(room: Room, role: Role, transport_options: WebRtcTransportOptions) -> Self {
+        let id = SessionId::new();
+        log::debug!("created new session {}", id);
         Self {
             shared: Arc::new(Shared {
                 state: Mutex::new(State {
@@ -86,17 +84,31 @@ impl Session {
                     data_producers: HashMap::new(),
                 }),
                 handlers: Handlers::default(),
-                id: Uuid::new_v4(),
+                id,
                 role,
-                privileged: false, // TODO from token
+                transport_options,
                 room,
-                send_transport,
-                recv_transport,
+                send_transport: OnceCell::new(),
+                recv_transport: OnceCell::new(),
             }),
         }
     }
 
-    pub async fn connect_transport(
+    pub async fn connect_send_transport(
+        &self,
+        dtls_parameters: DtlsParameters,
+    ) -> Result<TransportId> {
+        self.connect_transport(self.get_send_transport().await, dtls_parameters)
+            .await
+    }
+    pub async fn connect_recv_transport(
+        &self,
+        dtls_parameters: DtlsParameters,
+    ) -> Result<TransportId> {
+        self.connect_transport(self.get_recv_transport().await, dtls_parameters)
+            .await
+    }
+    async fn connect_transport(
         &self,
         transport: WebRtcTransport,
         dtls_parameters: DtlsParameters,
@@ -117,7 +129,7 @@ impl Session {
         local_pool: tokio_local::LocalPoolHandle,
         producer_id: ProducerId,
     ) -> Result<Consumer> {
-        let transport = self.get_recv_transport();
+        let transport = self.get_recv_transport().await;
         // make sure client has provided rtp caps
         let rtp_capabilities = self
             .get_rtp_capabilities()
@@ -154,7 +166,7 @@ impl Session {
         kind: MediaKind,
         rtp_parameters: RtpParameters,
     ) -> Result<Producer> {
-        let transport = self.get_send_transport();
+        let transport = self.get_send_transport().await;
         let producer = local_pool
             .spawn_pinned(move || async move {
                 transport
@@ -196,7 +208,7 @@ impl Session {
         local_pool: tokio_local::LocalPoolHandle,
         data_producer_id: DataProducerId,
     ) -> Result<DataConsumer> {
-        let transport = self.get_recv_transport();
+        let transport = self.get_recv_transport().await;
         let options = DataConsumerOptions::new_sctp(data_producer_id);
 
         let data_consumer = local_pool
@@ -218,7 +230,7 @@ impl Session {
         local_pool: tokio_local::LocalPoolHandle,
         sctp_stream_parameters: SctpStreamParameters,
     ) -> Result<DataProducer> {
-        let transport = self.get_send_transport();
+        let transport = self.get_send_transport().await;
         let data_producer = local_pool
             .spawn_pinned(move || async move {
                 transport
@@ -261,9 +273,6 @@ impl Session {
     pub fn role(&self) -> Role {
         self.shared.role
     }
-    pub fn is_privileged(&self) -> bool {
-        self.shared.privileged
-    }
     pub fn get_room(&self) -> Room {
         self.shared.room.clone()
     }
@@ -280,11 +289,35 @@ impl Session {
         self.shared.handlers.closed.add(Box::new(callback))
     }
 
-    pub fn get_send_transport(&self) -> WebRtcTransport {
-        self.shared.send_transport.clone()
+    pub async fn get_send_transport(&self) -> WebRtcTransport {
+        self.shared
+            .send_transport
+            .get_or_init(|| async {
+                self.shared
+                    .room
+                    .get_router()
+                    .await
+                    .create_webrtc_transport(self.shared.transport_options.clone())
+                    .await
+                    .unwrap()
+            })
+            .await
+            .clone()
     }
-    pub fn get_recv_transport(&self) -> WebRtcTransport {
-        self.shared.recv_transport.clone()
+    pub async fn get_recv_transport(&self) -> WebRtcTransport {
+        self.shared
+            .recv_transport
+            .get_or_init(|| async {
+                self.shared
+                    .room
+                    .get_router()
+                    .await
+                    .create_webrtc_transport(self.shared.transport_options.clone())
+                    .await
+                    .unwrap()
+            })
+            .await
+            .clone()
     }
     pub fn set_rtp_capabilities(&self, rtp_capabilities: RtpCapabilities) {
         let mut state = self.shared.state.lock().unwrap();
@@ -362,15 +395,8 @@ impl Drop for Shared {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Role {
     Vulcast,
     WebClient,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct SessionToken {
-    pub room_id: RoomId,
-    pub role: Role,
 }

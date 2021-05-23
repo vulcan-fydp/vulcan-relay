@@ -10,6 +10,19 @@ use mediasoup::rtp_parameters::{
 };
 use mediasoup::sctp_parameters::SctpStreamParameters;
 use mediasoup::webrtc_transport::{TransportListenIps, WebRtcTransportOptions};
+use mediasoup::worker::WorkerSettings;
+use mediasoup::worker_manager::WorkerManager;
+
+use vulcan_relay::relay_server::RelayServer;
+
+pub async fn relay_server() -> RelayServer {
+    let worker_manager = WorkerManager::new();
+    let worker = worker_manager
+        .create_worker(WorkerSettings::default())
+        .await
+        .unwrap();
+    RelayServer::new(worker, local_transport_options(), media_codecs())
+}
 
 pub fn local_transport_options() -> WebRtcTransportOptions {
     let mut transport_options =

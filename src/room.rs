@@ -1,19 +1,26 @@
 use futures::stream::{self, Stream, StreamExt};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
+use uuid::Uuid;
 
-use anyhow::{anyhow, Result};
+use derive_more::Display;
 use mediasoup::data_producer::DataProducerId;
 use mediasoup::producer::ProducerId;
 use mediasoup::router::{Router, RouterOptions};
 use mediasoup::rtp_parameters::RtpCodecCapability;
 use mediasoup::worker::Worker;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, OnceCell};
 use tokio_stream::wrappers::BroadcastStream;
 
 use crate::session::{Role, Session, SessionId, WeakSession};
 
-pub type RoomId = String;
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Display, Hash, Default)]
+pub struct RoomId(Uuid);
+impl RoomId {
+    pub fn new() -> Self {
+        RoomId(Uuid::new_v4())
+    }
+}
 
 #[derive(Clone)]
 pub struct Room {
@@ -29,7 +36,10 @@ struct Shared {
     state: Mutex<State>,
 
     id: RoomId,
-    router: Router,
+    worker: Worker,
+    codecs: Vec<RtpCodecCapability>,
+
+    router: OnceCell<Router>,
     producer_available_tx: broadcast::Sender<ProducerId>,
     data_producer_available_tx: broadcast::Sender<DataProducerId>,
 }
@@ -39,29 +49,39 @@ struct State {
 }
 
 impl Room {
-    pub async fn new(room_id: RoomId, worker: Worker, codecs: Vec<RtpCodecCapability>) -> Self {
-        let router = worker
-            .create_router(RouterOptions::new(codecs))
-            .await
-            .unwrap();
+    pub fn new(worker: Worker, codecs: Vec<RtpCodecCapability>) -> Self {
+        let id = RoomId::new();
+        log::debug!("created new room {}", id);
         Self {
             shared: Arc::new(Shared {
                 state: Mutex::new(State {
                     sessions: HashMap::new(),
                 }),
-                id: room_id,
-                router,
+                id,
+                worker,
+                codecs,
+                router: OnceCell::new(),
                 producer_available_tx: broadcast::channel(16).0,
                 data_producer_available_tx: broadcast::channel(16).0,
             }),
         }
     }
 
-    pub fn get_router(&self) -> Router {
-        self.shared.router.clone()
+    pub async fn get_router(&self) -> Router {
+        self.shared
+            .router
+            .get_or_init(|| async {
+                self.shared
+                    .worker
+                    .create_router(RouterOptions::new(self.shared.codecs.clone()))
+                    .await
+                    .unwrap()
+            })
+            .await
+            .clone()
     }
 
-    pub fn add_session(&self, session: Session) -> Result<()> {
+    pub fn add_session(&self, session: Session) {
         let mut state = self.shared.state.lock().unwrap();
         if session.role() == Role::Vulcast
             && state
@@ -69,7 +89,7 @@ impl Room {
                 .values()
                 .any(|session| session.upgrade().unwrap().role() == Role::Vulcast)
         {
-            return Err(anyhow!("cannot have more than one Vulcast in a room"));
+            panic!("cannot have more than one Vulcast in a room");
         }
         state.sessions.insert(session.id(), session.downgrade());
 
@@ -82,8 +102,6 @@ impl Room {
                 }
             })
             .detach();
-
-        Ok(())
     }
 
     fn remove_session(&self, session_id: SessionId) {
@@ -136,7 +154,7 @@ impl Room {
     }
 
     pub fn id(&self) -> RoomId {
-        self.shared.id.clone()
+        self.shared.id
     }
     pub fn downgrade(&self) -> WeakRoom {
         WeakRoom {
