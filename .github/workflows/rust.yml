@@ -57,7 +57,7 @@ jobs:
         run: |
           git add .
           if ! git diff-index --quiet HEAD --; then
-            python ./schema/update-version.py
+            python ./update-version.py
             VERSION=`cat ./version`
             git config user.email "vulcanfydp@gmail.com"
             git config user.name "Vulcan Fydp"
