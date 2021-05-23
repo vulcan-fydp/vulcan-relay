@@ -10,7 +10,7 @@ use crate::relay_server::{
 pub struct QueryRoot;
 #[Object]
 impl QueryRoot {
-    /// Get the version of this relay instance.
+    /// Get the version and build info of this relay instance.
     async fn version(&self, _ctx: &Context<'_>) -> String {
         format!(
             "{}_{}_{}_{}",
