@@ -40,3 +40,28 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
+
+      - name: Check out schema
+        uses: actions/checkout@v2
+        with:
+          repository: "vulcan-fydp/schema"
+          ref: master
+          token: ${{ secrets.VULCAN_FYDP_CI_GH_PAT }}
+          path: "./schema"
+      - name: Dump schema
+        run: |
+          cargo run --bin dump_control_schema > ./schema/control_schema.gql
+          cargo run --bin dump_signal_schema > ./schema/signal_schema.gql
+      - name: Commit schema if changed
+        working-directory: ./schema
+        run: |
+          git add .
+          if ! git diff-index --quiet HEAD --; then
+            python ./schema/update-version.py
+            VERSION=`cat ./version`
+            git config user.email "vulcanfydp@gmail.com"
+            git config user.name "Vulcan Fydp"
+            git commit -m "Update relay schema to v$VERSION"
+            git tag -a v$VERSION -m v$VERSION
+            git push origin master --follow-tags
+          fi
