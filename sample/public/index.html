@@ -1,32 +1,112 @@
 <!doctype html>
-<style>
-    body {
-        margin: 0;
-    }
+<html>
 
-    #container {
-        display: flex;
-    }
+<head>
+    <style>
+        video {
+            max-width: 100%;
+        }
+    </style>
+</head>
 
-    figure {
-        margin: 0;
-        width: 50vw;
-    }
+<body>
+    <table>
+        <tr>
+            <td>
+                <label for="signalAddr">Signal Address:</label>
+            </td>
+            <td>
+                <input type="text" id="signalAddr" name="signalAddr" value="wss://192.168.140.128:8443" /><br />
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <label for="controlAddr">Control Address:</label>
+            </td>
+            <td>
+                <input type="text" id="controlAddr" name="controlAddr" value="https://192.168.140.128:9443" /><br />
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <label for="roomId">Room ID:</label>
+            </td>
+            <td>
+                <input type="text" id="roomId" name="roomId" value="ayush" /><br />
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <label for="vulcastId">Vulcast Session ID:</label>
+            </td>
+            <td>
+                <input type="text" id="vulcastId" name="vulcastId" value="0" /><br />
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <label for="clientId">Client Session ID:</label>
+            </td>
+            <td>
+                <input type="text" id="clientId" name="clientId" value="1" /><br />
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <label for="vulcastToken">Vulcast Token:</label>
+            </td>
+            <td>
+                <input type="text" id="vulcastToken" name="vulcastToken" value=""/><br />
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <label for="clientToken">Client Token:</label>
+            </td>
+            <td>
+                <input type="text" id="clientToken" name="clientToken" value=""/><br />
+            </td>
+        </tr>
+        <tr>
+            <td>Controls:</td>
+            <td>
+                <button id="registerVulcast">Register Vulcast</button>
+                <button id="unregisterVulcast">Unegister Vulcast</button>
+                <button id="connectVulcast">Connect Vulcast</button>
+                <button id="disconnectVulcast">Disconnect Vulcast</button>
+            </td>
+        </tr>
+        <tr>
+            <td></td>
+            <td>
+                <button id="registerClient">Register Client</button>
+                <button id="unregisterClient">Unregister Client</button>
+                <button id="connectClient">Connect Client</button>
+                <button id="disconnectClient">Disconnect Client</button>
+            </td>
+        </tr>
+        <tr>
+            <td></td>
+            <td>
+                <button id="registerRoom">Register Room</button>
+                <button id="unregisterRoom">Unregister Room</button>
+            </td>
+        </tr>
+    </table>
 
-    video {
-        max-width: 100%;
-    }
-</style>
-<div id="container">
-    <canvas width="640" height="480"></canvas>
-    <figure>
-        <video id="preview-send" muted controls></video>
-        <figcaption>Send preview</figcaption>
-    </figure>
-    <figure>
-        <video id="preview-receive" muted controls></video>
-        <figcaption>Receive preview</figcaption>
-    </figure>
-</div>
-<script src="bundle.js">
-</script>
+    <div style="display:flex">
+        <!-- <canvas width="640" height="480"></canvas> -->
+        <figure>
+            <video id="preview-send" muted controls></video>
+            <figcaption>Send preview</figcaption>
+        </figure>
+        <figure>
+            <video id="preview-receive" muted controls></video>
+            <figcaption>Receive preview</figcaption>
+        </figure>
+    </div>
+    <script src="bundle.js">
+    </script>
+</body>
+
+</html>

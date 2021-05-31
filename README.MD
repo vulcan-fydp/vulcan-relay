@@ -31,15 +31,37 @@ docker run -it --init --rm --name relay --network=host -v /mnt/scratch/vulcan-re
 ```
 
 ## Sample
-- Sample web application using mediasoup-client which emulates a Vulcast/Web Client from the perspective of the Relay
-- Each instance of the page you open will connect one Vulcast session and one Web Client session to a room called `ayush`
+- Sample web application using mediasoup-client which emulates the backend and a Vulcast/Web Client from the perspective of the Relay
 - You can open multiple tabs of the page to simulate multiple sessions connecting to the same room
-    - Any Vulcast sessions after the first one will be denied since there is a limit of 1 per room
-- You may need to change WebSocket endpoint address in `sample/src/index.ts`
+- Open the debug console to see detailed logs
 ```
 cd sample
 npm start
 ```
 
-1. Navigate to https://localhost:8443 and click through self-signed certificate warnings
+1. Navigate to the signalling endpoint and click through self-signed certificate warnings (default https://localhost:8443)
 2. Navigate to https://localhost:3001
+3. Set Signal Address and Control Address to the Relay instance
+4. Open the debug console
+5. Press control buttons to execute actions
+
+All controls will use the parameter fields in the input boxes. Token fields will autofill when registering. 
+
+Example flow:
+
+1. Set the following initial parameters
+```
+Signal Address: wss://192.168.140.128:8443
+Control Address: https://192.168.140.128:9443
+Room ID: ayush
+Vulcast Session ID: 0
+Client Session ID: 0
+```
+
+2. Register Vulcast
+- This will fill the Vulcast Token field
+3. Register Room
+- This will fill the Client Token field
+4. Register Client
+5. Connect Vulcast
+6. Connect Client

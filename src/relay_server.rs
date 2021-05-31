@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
@@ -62,15 +63,15 @@ impl RelayServer {
 
     pub fn register_room(
         &self,
-        room_id: ForeignRoomId,
-        vulcast_session_id: ForeignSessionId,
+        frid: ForeignRoomId,
+        vulcast_fsid: ForeignSessionId,
     ) -> Result<(), RegisterRoomError> {
         let mut state = self.shared.state.lock().unwrap();
-        match state.session_options.get(&vulcast_session_id) {
+        match state.session_options.get(&vulcast_fsid) {
             Some(SessionOptions::Vulcast) => {
                 match state
                     .registered_rooms
-                    .insert_no_overwrite(room_id, vulcast_session_id)
+                    .insert_no_overwrite(frid, vulcast_fsid)
                 {
                     Ok(_) => Ok(()),
                     Err((_, vulcast_session_id)) => {
@@ -78,68 +79,87 @@ impl RelayServer {
                     }
                 }
             }
-            _ => Err(RegisterRoomError::UnknownSession(vulcast_session_id)),
+            _ => Err(RegisterRoomError::UnknownSession(vulcast_fsid)),
         }
     }
 
     pub fn unregister_room(&self, room_id: ForeignRoomId) -> Result<(), UnregisterRoomError> {
         let mut state = self.shared.state.lock().unwrap();
         match state.registered_rooms.remove_by_left(&room_id) {
-            Some(_) => Ok(()),
+            Some(_) => {
+                drop(state);
+                // nuke all client sessions in this room
+                self.get_client_sessions_in_room(room_id)
+                    .into_iter()
+                    .for_each(|fsid| self.unregister_session(fsid).unwrap());
+                Ok(())
+            }
             None => Err(UnregisterRoomError::UnknownRoom(room_id)),
         }
-        // TODO nuke all sessions in this room
     }
 
     pub fn register_session(
         &self,
-        foreign_session_id: ForeignSessionId,
+        fsid: ForeignSessionId,
         session_options: SessionOptions,
     ) -> Result<SessionToken, RegisterSessionError> {
         let mut state = self.shared.state.lock().unwrap();
         let session_token = SessionToken::new();
         match &session_options {
-            SessionOptions::WebClient(foreign_room_id)
-                if !state.registered_rooms.contains_left(foreign_room_id) =>
-            {
-                Err(RegisterSessionError::UnknownRoom(foreign_room_id.clone()))
+            SessionOptions::WebClient(frid) if !state.registered_rooms.contains_left(frid) => {
+                Err(RegisterSessionError::UnknownRoom(frid.clone()))
             }
             _ => match state
                 .registered_sessions
-                .insert_no_overwrite(foreign_session_id.clone(), session_token.clone())
+                .insert_no_overwrite(fsid.clone(), session_token)
             {
                 Ok(_) => {
-                    state
-                        .session_options
-                        .insert(foreign_session_id, session_options.clone());
+                    state.session_options.insert(fsid, session_options.clone());
                     Ok(session_token)
                 }
-                Err((foreign_session_id, _)) => {
-                    Err(RegisterSessionError::NonUniqueId(foreign_session_id))
-                }
+                Err((fsid, _)) => Err(RegisterSessionError::NonUniqueId(fsid)),
             },
         }
     }
 
-    pub fn unregister_session(
-        &self,
-        foreign_session_id: ForeignSessionId,
-    ) -> Result<(), UnregisterSessionError> {
+    pub fn unregister_session(&self, fsid: ForeignSessionId) -> Result<(), UnregisterSessionError> {
         let mut state = self.shared.state.lock().unwrap();
         // remove registration info
-        match state
-            .registered_sessions
-            .remove_by_left(&foreign_session_id)
-        {
+        match state.registered_sessions.remove_by_left(&fsid) {
             Some(_) => {
-                state.session_options.remove(&foreign_session_id).unwrap();
-                // nuke any active connections by dropping phy session
-                state.sessions.remove(&foreign_session_id);
-                // TODO what if we unregistered a vulcast with other people in the room...
+                let session_options = state.session_options.remove(&fsid).unwrap();
+                match session_options {
+                    SessionOptions::Vulcast => {
+                        // if we are a vulcast in a room, also nuke the room
+                        if let Some(frid) = state.registered_rooms.get_by_right(&fsid).cloned() {
+                            drop(state);
+                            self.unregister_room(frid).unwrap();
+                        }
+                    }
+                    SessionOptions::WebClient(_) => {
+                        drop(state);
+                        // nuke any active connections by dropping phy session
+                        drop(self.take_session(&fsid));
+                    }
+                }
                 Ok(())
             }
-            None => Err(UnregisterSessionError::UnknownSession(foreign_session_id)),
+            None => Err(UnregisterSessionError::UnknownSession(fsid)),
         }
+    }
+
+    pub fn take_session(&self, fsid: &ForeignSessionId) -> Option<Session> {
+        let mut state = self.shared.state.lock().unwrap();
+        state.sessions.remove(fsid)
+    }
+
+    pub fn take_session_by_token(&self, token: &SessionToken) -> Option<Session> {
+        let mut state = self.shared.state.lock().unwrap();
+        state
+            .registered_sessions
+            .get_by_right(token)
+            .cloned()
+            .and_then(|fsid| state.sessions.remove(&fsid))
     }
 
     pub fn session_from_token(&self, token: SessionToken) -> Option<WeakSession> {
@@ -153,25 +173,26 @@ impl RelayServer {
             .cloned()
             .unwrap();
 
+        // drop existing session if exists
+        state.sessions.remove(&foreign_session_id);
+
         // find vulcast fsid of the room this session should connect to
-        let vulcast_session_id = match &session_options {
+        let vulcast_fsid = match &session_options {
             SessionOptions::Vulcast => foreign_session_id.clone(),
-            SessionOptions::WebClient(foreign_room_id) => state
-                .registered_rooms
-                .get_by_left(foreign_room_id)
-                .cloned()
-                .unwrap(),
+            SessionOptions::WebClient(frid) => {
+                state.registered_rooms.get_by_left(frid).cloned().unwrap()
+            }
         };
 
         // find/create the phy room corresponding to the vulcast fsid
         let room = state
             .rooms
-            .get(&vulcast_session_id)
+            .get(&vulcast_fsid)
             .and_then(|weak_room| weak_room.upgrade())
             .unwrap_or_else(|| {
                 Room::new(self.shared.worker.clone(), self.shared.media_codecs.clone())
             });
-        state.rooms.insert(vulcast_session_id, room.downgrade()); // may re-insert
+        state.rooms.insert(vulcast_fsid, room.downgrade()); // may re-insert
 
         // create and bind session to room
         let session = Session::new(
@@ -181,9 +202,28 @@ impl RelayServer {
         );
         room.add_session(session.clone());
 
-        // store owning session, dropping any existing session
+        // store owning session
         state.sessions.insert(foreign_session_id, session.clone());
         Some(session.downgrade())
+    }
+
+    fn get_client_sessions_in_room(&self, frid: ForeignRoomId) -> Vec<ForeignSessionId> {
+        let state = self.shared.state.lock().unwrap();
+        state
+            .registered_sessions
+            .iter()
+            .filter_map(|(fsid, _)| {
+                state
+                    .session_options
+                    .get(&fsid)
+                    .filter(|session_options| match session_options {
+                        SessionOptions::WebClient(client_frid) => *client_frid == frid,
+                        _ => false,
+                    })
+                    .and(Some(fsid))
+            })
+            .cloned()
+            .collect()
     }
 }
 
@@ -192,7 +232,20 @@ pub struct ForeignRoomId(pub String);
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Display, Hash)]
 pub struct ForeignSessionId(pub String);
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display, Default)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Display,
+    Default,
+    Serialize,
+    Deserialize,
+)]
 pub struct SessionToken(pub Uuid);
 impl SessionToken {
     pub fn new() -> Self {

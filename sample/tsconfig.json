@@ -11,8 +11,8 @@
     "baseUrl": "src",
     "outDir": "dist",
     "strict": true,
-    "noUnusedParameters": true,
-    "noUnusedLocals": true,
+    "noUnusedParameters": false,
+    "noUnusedLocals": false,
     "lib": [
       "es5",
       "es2015",

@@ -1,17 +1,19 @@
 /* eslint-disable no-console */
+
 import { Device } from 'mediasoup-client';
 // import { MediaKind, RtpCapabilities, RtpParameters } from 'mediasoup-client/lib/RtpParameters';
 // import { Transport } from 'mediasoup-client/lib/Transport';
 // import { ConsumerOptions } from 'mediasoup-client/lib/Consumer';
 
 import { WebSocketLink } from '@apollo/client/link/ws';
-import { ApolloClient, InMemoryCache, gql, FetchResult } from '@apollo/client/core';
+import { ApolloClient, NormalizedCacheObject, InMemoryCache, gql, FetchResult, HttpLink } from '@apollo/client/core';
+import { SubscriptionClient } from "subscriptions-transport-ws";
 
 declare global {
     interface HTMLCanvasElement {
         captureStream(frameRate?: number): MediaStream;
     }
-    class CanvasCaptureMediaStreamTrack extends MediaStreamTrack{
+    class CanvasCaptureMediaStreamTrack extends MediaStreamTrack {
         requestFrame(): void;
     }
 }
@@ -20,6 +22,178 @@ declare global {
 
 const sendPreview = document.querySelector('#preview-send') as HTMLVideoElement;
 const receivePreview = document.querySelector('#preview-receive') as HTMLVideoElement;
+
+function param(param: string) {
+    return function (value?: string) {
+        const input = document.getElementById(param) as HTMLInputElement;
+        if (value) { input.value = value; }
+        return input.value;
+    }
+}
+const signalAddr = param("signalAddr");
+const controlAddr = param("controlAddr");
+const roomId = param("roomId");
+const vulcastId = param("vulcastId");
+const clientId = param("clientId");
+const vulcastToken = param("vulcastToken");
+const clientToken = param("clientToken");
+
+let vulcastSub: SubscriptionClient | null = null;
+let clientSub: SubscriptionClient | null = null;
+
+(document.getElementById("registerVulcast") as HTMLButtonElement).addEventListener("click", async function () {
+    let client = getControlConnection();
+    let result = await client.mutate({
+        mutation: gql`
+                mutation($sessionId: ID!){
+                    registerVulcastSession(sessionId: $sessionId) {
+                        ... on Session {
+                            id,
+                            accessToken
+                        }
+                    }
+                }
+                `,
+        variables: {
+            sessionId: vulcastId()
+        }
+    }).then(response => {
+        let data = response.data.registerVulcastSession;
+        console.log('registerVulcastSession', data.__typename, data);
+        return data?.accessToken;
+    });
+    vulcastToken(result);
+}, false);
+
+(document.getElementById("unregisterVulcast") as HTMLButtonElement).addEventListener("click", async function () {
+    let client = getControlConnection();
+    await client.mutate({
+        mutation: gql`
+                mutation($sessionId: ID!){
+                    unregisterSession(sessionId: $sessionId) {
+                        ... on Session {
+                            id
+                        }
+                    }
+                }
+                `,
+        variables: {
+            sessionId: vulcastId()
+        }
+    }).then(response => {
+        let data = response.data.unregisterSession;
+        console.log('unregisterSession', data.__typename, data);
+        return data.id;
+    });
+}, false);
+(document.getElementById("connectVulcast") as HTMLButtonElement).addEventListener("click", async function () {
+    vulcastSub?.close();
+    vulcastSub = await session(Role.Vulcast, vulcastToken());
+}, false);
+(document.getElementById("disconnectVulcast") as HTMLButtonElement).addEventListener("click", async function () {
+    console.log("disconnectVulcast", vulcastSub);
+    vulcastSub?.close();
+}, false);
+
+(document.getElementById("registerClient") as HTMLButtonElement).addEventListener("click", async function () {
+    let client = getControlConnection();
+    let result = await client.mutate({
+        mutation: gql`
+                mutation($sessionId: ID!, $roomId: ID!){
+                    registerClientSession(sessionId: $sessionId, roomId: $roomId) {
+                        ... on Session {
+                            id,
+                            accessToken
+                        }
+                    }
+                }
+                `,
+        variables: {
+            sessionId: clientId(),
+            roomId: roomId()
+        }
+    }).then(response => {
+        let data = response.data.registerClientSession;
+        console.log('registerClientSession', data.__typename, data);
+        return data?.accessToken;
+    });
+    clientToken(result);
+}, false);
+(document.getElementById("unregisterClient") as HTMLButtonElement).addEventListener("click", async function () {
+    let client = getControlConnection();
+    await client.mutate({
+        mutation: gql`
+                mutation($sessionId: ID!){
+                    unregisterSession(sessionId: $sessionId) {
+                        ... on Session {
+                            id
+                        }
+                    }
+                }
+                `,
+        variables: {
+            sessionId: clientId()
+        }
+    }).then(response => {
+        let data = response.data.unregisterSession;
+        console.log('unregisterSession', data.__typename, data);
+        return data?.id;
+    });
+}, false);
+(document.getElementById("connectClient") as HTMLButtonElement).addEventListener("click", async function () {
+    clientSub?.close();
+    clientSub = await session(Role.WebClient, clientToken());
+}, false);
+(document.getElementById("disconnectClient") as HTMLButtonElement).addEventListener("click", function () {
+    console.log("disconnectClient", clientSub);
+    clientSub?.close();
+}, false);
+
+(document.getElementById("registerRoom") as HTMLButtonElement).addEventListener("click", async function () {
+    let client = getControlConnection();
+    let result = await client.mutate({
+        mutation: gql`
+                mutation($vulcastSessionId: ID!, $roomId: ID!){
+                    registerRoom(vulcastSessionId: $vulcastSessionId, roomId: $roomId) {
+                        ... on Room {
+                            id,
+                        }
+                    }
+                }
+                `,
+        variables: {
+            vulcastSessionId: vulcastId(),
+            roomId: roomId()
+        }
+    }).then(response => {
+        let data = response.data.registerRoom;
+        console.log('registerRoom', data.__typename, data);
+        return data?.id;
+    });
+}, false);
+(document.getElementById("unregisterRoom") as HTMLButtonElement).addEventListener("click", async function () {
+    let client = getControlConnection();
+    let result = await client.mutate({
+        mutation: gql`
+                mutation($roomId: ID!){
+                    unregisterRoom(roomId: $roomId) {
+                        ... on Room {
+                            id,
+                        }
+                    }
+                }
+                `,
+        variables: {
+            roomId: roomId()
+        }
+    }).then(response => {
+        let data = response.data.unregisterRoom;
+        console.log('unregisterRoom', data.__typename, data);
+        return data?.id;
+    });
+    clientToken(result);
+}, false);
+
 // const canvas = document.querySelector('canvas') as HTMLCanvasElement;
 
 sendPreview.onloadedmetadata = () => {
@@ -40,23 +214,32 @@ function jsonClone(x: Object) {
     return JSON.parse(JSON.stringify(x))
 }
 
-async function session(role: Role) {
-    const wsLink = new WebSocketLink({
-        uri: 'wss://192.168.140.136:8443',
-        options: {
-            reconnect: true,
-            // auth token (for now, just a JSON object)
-            connectionParams: {
-                "roomId": "ayush",
-                "role": role
-            }
+function getControlConnection() {
+    const httpLink = new HttpLink({
+        uri: controlAddr(),
+    });
+    return new ApolloClient({
+        link: httpLink,
+        cache: new InMemoryCache(),
+    })
+}
+
+function getSignalConnection(token: string) {
+    let sub = new SubscriptionClient(signalAddr(), {
+        connectionParams: {
+            token
         }
     });
-
-    const client = new ApolloClient({
+    const wsLink = new WebSocketLink(sub);
+    let client = new ApolloClient({
         link: wsLink,
         cache: new InMemoryCache(),
     })
+    return { client, sub };
+}
+
+async function session(role: Role, token: string) {
+    let { client, sub } = getSignalConnection(token);
 
     const device = new Device();
 
@@ -148,6 +331,9 @@ async function session(role: Role) {
                     })
                 });
 
+                receivePreview.srcObject = null;
+                receiveMediaStream = undefined; 
+
                 // listen for when new media producers are available
                 client.subscribe({
                     query: gql`
@@ -179,6 +365,7 @@ async function session(role: Role) {
                         if (receiveMediaStream) {
                             receiveMediaStream.addTrack(consumer.track);
                             receivePreview.srcObject = receiveMediaStream;
+                            // TODO we also need to allow overwriting audio/video tracks
                         } else {
                             receiveMediaStream = new MediaStream([consumer.track]);
                             receivePreview.srcObject = receiveMediaStream;
@@ -204,9 +391,12 @@ async function session(role: Role) {
                 // start producing data (this would be controller inputs in binary format)
                 let dataProducer = await sendTransport.produceData({ ordered: false });
                 dataProducer.on('open', () => {
-                    setInterval(() => {
+                    let handle = setInterval(() => {
                         let data = "hello " + Math.floor(1000 * Math.random());
                         console.log(role, "send data", data);
+                        if (dataProducer.closed) {
+                            clearInterval(handle);
+                        }
                         dataProducer.send(data);
                     }, 1000);
                 });
@@ -307,11 +497,5 @@ async function session(role: Role) {
             });
             break;
     }
+    return sub;
 }
-
-async function init() {
-    await session(Role.WebClient);
-    await session(Role.Vulcast);
-}
-
-init()

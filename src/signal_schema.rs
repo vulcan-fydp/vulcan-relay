@@ -1,25 +1,30 @@
 use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 
-use async_graphql::guard::Guard;
+use anyhow::anyhow;
 use async_graphql::{scalar, Context, Object, Result, Schema, SimpleObject, Subscription};
 use mediasoup::transport::Transport;
 
-use crate::session::{Role, WeakSession};
+use crate::session::{Session, WeakSession};
+
+fn session_from_ctx(ctx: &Context<'_>) -> Result<Session, anyhow::Error> {
+    ctx.data_opt::<WeakSession>()
+        .and_then(|weak_session| weak_session.upgrade())
+        .ok_or_else(|| anyhow!("session is invalid or dropped"))
+}
 
 #[derive(Default)]
 pub struct QueryRoot;
 #[Object]
 impl QueryRoot {
     /// Obtain initialization parameters for client-side mediasoup device
-    #[graphql(guard(SessionGuard()))]
-    async fn init(&self, ctx: &Context<'_>) -> ServerInitParameters {
-        let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
+    async fn init(&self, ctx: &Context<'_>) -> Result<ServerInitParameters> {
+        let session = session_from_ctx(ctx)?;
         let room = session.get_room();
         let send_transport = session.get_send_transport().await;
         let recv_transport = session.get_recv_transport().await;
         let router = room.get_router().await;
-        ServerInitParameters {
+        Ok(ServerInitParameters {
             send_transport_options: TransportOptions {
                 id: send_transport.id(),
                 dtls_parameters: send_transport.dtls_parameters(),
@@ -35,7 +40,7 @@ impl QueryRoot {
                 ice_parameters: recv_transport.ice_parameters().clone(),
             },
             router_rtp_capabilities: RtpCapabilitiesFinalized(router.rtp_capabilities().clone()),
-        }
+        })
     }
 }
 
@@ -44,44 +49,40 @@ pub struct MutationRoot;
 #[Object]
 impl MutationRoot {
     /// Provide initialization parameters for server-side mediasoup device
-    #[graphql(guard(SessionGuard()))]
     async fn init(&self, ctx: &Context<'_>, rtp_capabilities: RtpCapabilities) -> Result<bool> {
-        let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
+        let session = session_from_ctx(ctx)?;
         session.set_rtp_capabilities(rtp_capabilities.0);
         Ok(true)
     }
 
     /// Provide connection parameters for server-side transport
-    #[graphql(guard(SessionGuard()))]
     async fn connect_send_transport(
         &self,
         ctx: &Context<'_>,
         dtls_parameters: DtlsParameters,
     ) -> Result<TransportId> {
-        let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
+        let session = session_from_ctx(ctx)?;
         Ok(TransportId(
             session.connect_send_transport(dtls_parameters.0).await?,
         ))
     }
 
     /// Provide connection parameters for server-side transport
-    #[graphql(guard(SessionGuard()))]
     async fn connect_recv_transport(
         &self,
         ctx: &Context<'_>,
         dtls_parameters: DtlsParameters,
     ) -> Result<TransportId> {
-        let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
+        let session = session_from_ctx(ctx)?;
         Ok(TransportId(
             session.connect_recv_transport(dtls_parameters.0).await?,
         ))
     }
 
     /// Request consumption of media stream
-    #[graphql(guard(RoleGuard(role = "Role::WebClient")))]
     async fn consume(&self, ctx: &Context<'_>, producer_id: ProducerId) -> Result<ConsumerOptions> {
         let local_pool = ctx.data_unchecked::<tokio_local::LocalPoolHandle>();
-        let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
+        let session = session_from_ctx(ctx)?;
         let consumer = session.consume(local_pool.clone(), producer_id.0).await?;
         Ok(ConsumerOptions {
             id: consumer.id(),
@@ -92,15 +93,13 @@ impl MutationRoot {
     }
 
     /// Resume existing consumer
-    #[graphql(guard(RoleGuard(role = "Role::WebClient")))]
     async fn consumer_resume(&self, ctx: &Context<'_>, consumer_id: ConsumerId) -> Result<bool> {
-        let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
+        let session = session_from_ctx(ctx)?;
         session.consumer_resume(consumer_id.0).await?;
         Ok(true)
     }
 
     /// Request production of media stream
-    #[graphql(guard(RoleGuard(role = "Role::Vulcast")))]
     async fn produce(
         &self,
         ctx: &Context<'_>,
@@ -108,7 +107,7 @@ impl MutationRoot {
         rtp_parameters: RtpParameters,
     ) -> Result<ProducerId> {
         let local_pool = ctx.data_unchecked::<tokio_local::LocalPoolHandle>();
-        let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
+        let session = session_from_ctx(ctx)?;
         Ok(ProducerId(
             session
                 .produce(local_pool.clone(), kind.0, rtp_parameters.0)
@@ -118,7 +117,6 @@ impl MutationRoot {
     }
 
     /// Request consumption of data stream
-    #[graphql(guard(RoleGuard(role = "Role::Vulcast")))]
     async fn consume_data(
         &self,
         ctx: &Context<'_>,
@@ -137,14 +135,13 @@ impl MutationRoot {
     }
 
     /// Request production of data stream
-    #[graphql(guard(RoleGuard(role = "Role::WebClient")))]
     async fn produce_data(
         &self,
         ctx: &Context<'_>,
         sctp_stream_parameters: SctpStreamParameters,
     ) -> Result<DataProducerId> {
         let local_pool = ctx.data_unchecked::<tokio_local::LocalPoolHandle>();
-        let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
+        let session = session_from_ctx(ctx)?;
         Ok(DataProducerId(
             session
                 .produce_data(local_pool.clone(), sctp_stream_parameters.0)
@@ -159,22 +156,20 @@ pub struct SubscriptionRoot;
 #[Subscription]
 impl SubscriptionRoot {
     /// Notify when new producers are available
-    #[graphql(guard(RoleGuard(role = "Role::WebClient")))]
     async fn producer_available(
         &self,
         ctx: &Context<'_>,
-    ) -> async_graphql::Result<impl Stream<Item = ProducerId>> {
-        let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
+    ) -> Result<impl Stream<Item = ProducerId>> {
+        let session = session_from_ctx(ctx)?;
         let room = session.get_room();
         Ok(room.available_producers().map(ProducerId))
     }
     /// Notify when new data producers are available
-    #[graphql(guard(RoleGuard(role = "Role::Vulcast")))]
     async fn data_producer_available(
         &self,
         ctx: &Context<'_>,
-    ) -> async_graphql::Result<impl Stream<Item = DataProducerId>> {
-        let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
+    ) -> Result<impl Stream<Item = DataProducerId>> {
+        let session = session_from_ctx(ctx)?;
         let room = session.get_room();
         Ok(room.available_data_producers().map(DataProducerId))
     }
@@ -186,30 +181,6 @@ pub fn schema() -> SignalSchema {
     SignalSchema::build(QueryRoot, MutationRoot, SubscriptionRoot)
         .data(tokio_local::new_local_pool(2))
         .finish()
-}
-
-struct SessionGuard;
-#[async_trait::async_trait]
-impl Guard for SessionGuard {
-    async fn check(&self, ctx: &Context<'_>) -> Result<()> {
-        match ctx.data_opt::<WeakSession>().and_then(|x| x.upgrade()) {
-            Some(_) => Ok(()),
-            None => Err("valid session is required".into()),
-        }
-    }
-}
-
-struct RoleGuard {
-    role: Role,
-}
-#[async_trait::async_trait]
-impl Guard for RoleGuard {
-    async fn check(&self, ctx: &Context<'_>) -> Result<()> {
-        match ctx.data_opt::<WeakSession>().and_then(|x| x.upgrade()) {
-            Some(session) if session.role() == self.role => Ok(()),
-            _ => Err(format!("requires session with role {:?}", self.role).into()),
-        }
-    }
 }
 
 #[derive(Deserialize, Serialize, Clone, Copy)]

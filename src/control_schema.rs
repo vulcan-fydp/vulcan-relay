@@ -1,4 +1,4 @@
-use async_graphql::{Context, EmptySubscription, Object, Result, Schema, SimpleObject, Union, ID};
+use async_graphql::{Context, EmptySubscription, Object, Schema, SimpleObject, Union, ID};
 
 use crate::built_info;
 use crate::relay_server::{
@@ -45,12 +45,12 @@ impl MutationRoot {
     }
     /// Unregister a room with the given ID.
     /// This will also unregister all sessions associated with this room.
-    async fn unregister_room(
-        &self,
-        _ctx: &Context<'_>,
-        _room_id: ID,
-    ) -> Result<UnregisterRoomResult> {
-        todo!();
+    async fn unregister_room(&self, ctx: &Context<'_>, room_id: ID) -> UnregisterRoomResult {
+        let relay_server = ctx.data_unchecked::<RelayServer>();
+        match relay_server.unregister_room(ForeignRoomId(room_id.clone().into())) {
+            Ok(_) => UnregisterRoomResult::Ok(Room { id: room_id }),
+            Err(err) => err.into(),
+        }
     }
     /// Register a Vulcast with the given session ID.
     /// This is intended to be done once, when the Vulcast is powered on.
