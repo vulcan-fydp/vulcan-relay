@@ -12,7 +12,7 @@ use mediasoup::worker::Worker;
 use tokio::sync::{broadcast, OnceCell};
 use tokio_stream::wrappers::BroadcastStream;
 
-use crate::session::{Role, Session, SessionId, WeakSession};
+use crate::session::{Session, SessionId, WeakSession};
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Display, Hash, Default)]
 pub struct RoomId(Uuid);
@@ -67,6 +67,7 @@ impl Room {
         }
     }
 
+    /// Get the Mediasoup Router associated with this room.
     pub async fn get_router(&self) -> Router {
         self.shared
             .router
@@ -81,40 +82,33 @@ impl Room {
             .clone()
     }
 
+    /// Add a session to this room.
     pub fn add_session(&self, session: Session) {
         let mut state = self.shared.state.lock().unwrap();
-        if session.role() == Role::Vulcast
-            && state
-                .sessions
-                .values()
-                .any(|session| session.upgrade().unwrap().role() == Role::Vulcast)
-        {
-            panic!("cannot have more than one Vulcast in a room");
-        }
         state.sessions.insert(session.id(), session.downgrade());
-
-        let weak_room = self.downgrade();
-        session
-            .on_closed(move |session_id| {
-                if let Some(room) = weak_room.upgrade() {
-                    log::debug!("removing session {} from room {}", session_id, room.id());
-                    room.remove_session(session_id);
-                }
-            })
-            .detach();
+        log::debug!(
+            "associated session {} with room {}",
+            session.id(),
+            self.id()
+        );
     }
 
-    fn remove_session(&self, session_id: SessionId) {
+    /// Remvoe a session from this room.
+    pub fn remove_session(&self, session_id: SessionId) {
         let mut state = self.shared.state.lock().unwrap();
-        state
-            .sessions
-            .remove(&session_id)
-            .expect("session does not exist");
+        state.sessions.remove(&session_id).unwrap();
+        log::debug!(
+            "deassociated session {} from room {}",
+            session_id,
+            self.id()
+        );
     }
 
+    /// Announce a new producer to all sessions in this room.
     pub fn announce_producer(&self, producer_id: ProducerId) {
         let _ = self.shared.producer_available_tx.send(producer_id);
     }
+    /// Announce a new data producer to all sessions in this room.
     pub fn announce_data_producer(&self, data_producer_id: DataProducerId) {
         let _ = self
             .shared
@@ -122,34 +116,37 @@ impl Room {
             .send(data_producer_id);
     }
 
-    /// Get a stream which yields existing and new producers
+    /// Get a stream which yields existing and new producers.
     pub fn available_producers(&self) -> impl Stream<Item = ProducerId> {
         let state = self.shared.state.lock().unwrap();
         let producers = state
             .sessions
             .values()
-            .flat_map(|session| session.upgrade().unwrap().get_producers())
+            .filter_map(|weak_session| weak_session.upgrade()) // ignore dropped sessions
+            .flat_map(|session| session.get_producers())
+            .filter(|producer| !producer.closed()) // ignore closed producers
             .map(|producer| producer.id())
             .collect::<Vec<ProducerId>>();
         stream::select(
             stream::iter(producers),
-            BroadcastStream::new(self.shared.producer_available_tx.subscribe())
-                .map(|x| x.expect("receiver dropped message")),
+            BroadcastStream::new(self.shared.producer_available_tx.subscribe()).map(|x| x.unwrap()),
         )
     }
-    /// Get a stream which yields existing and new data producers
+    /// Get a stream which yields existing and new data producers.
     pub fn available_data_producers(&self) -> impl Stream<Item = DataProducerId> {
         let state = self.shared.state.lock().unwrap();
         let data_producers = state
             .sessions
             .values()
-            .flat_map(|session| session.upgrade().unwrap().get_data_producers())
+            .filter_map(|weak_session| weak_session.upgrade()) // ignore dropped sessions
+            .flat_map(|session| session.get_data_producers())
+            .filter(|data_producer| !data_producer.closed()) // ignore closed data producers
             .map(|data_producer| data_producer.id())
             .collect::<Vec<DataProducerId>>();
         stream::select(
             stream::iter(data_producers),
             BroadcastStream::new(self.shared.data_producer_available_tx.subscribe())
-                .map(|x| x.expect("receiver dropped message")),
+                .map(|x| x.unwrap()),
         )
     }
 

@@ -4,7 +4,6 @@ use uuid::Uuid;
 
 use anyhow::{anyhow, Result};
 use derive_more::Display;
-use event_listener_primitives::{BagOnce, HandlerId};
 use mediasoup::consumer::{Consumer, ConsumerId, ConsumerOptions};
 use mediasoup::data_consumer::{DataConsumer, DataConsumerId, DataConsumerOptions};
 use mediasoup::data_producer::{DataProducer, DataProducerId, DataProducerOptions};
@@ -41,10 +40,8 @@ pub struct WeakSession {
 
 struct Shared {
     state: Mutex<State>,
-    handlers: Handlers,
 
     id: SessionId,
-    role: Role,
     transport_options: WebRtcTransportOptions,
     room: Room,
     send_transport: OnceCell<WebRtcTransport>, // client -> server
@@ -65,13 +62,8 @@ struct State {
     data_producers: HashMap<DataProducerId, DataProducer>,
 }
 
-#[derive(Default)]
-struct Handlers {
-    closed: BagOnce<Box<dyn FnOnce(SessionId) + Send + Sync + 'static>>,
-}
-
 impl Session {
-    pub fn new(room: Room, role: Role, transport_options: WebRtcTransportOptions) -> Self {
+    pub fn new(room: Room, transport_options: WebRtcTransportOptions) -> Self {
         let id = SessionId::new();
         log::debug!("created new session {}", id);
         Self {
@@ -83,9 +75,7 @@ impl Session {
                     data_consumers: HashMap::new(),
                     data_producers: HashMap::new(),
                 }),
-                handlers: Handlers::default(),
                 id,
-                role,
                 transport_options,
                 room,
                 send_transport: OnceCell::new(),
@@ -94,6 +84,7 @@ impl Session {
         }
     }
 
+    /// Connect the local send transport with remote.
     pub async fn connect_send_transport(
         &self,
         dtls_parameters: DtlsParameters,
@@ -101,6 +92,7 @@ impl Session {
         self.connect_transport(self.get_send_transport().await, dtls_parameters)
             .await
     }
+    /// Connect the local receive transport with remote.
     pub async fn connect_recv_transport(
         &self,
         dtls_parameters: DtlsParameters,
@@ -108,6 +100,7 @@ impl Session {
         self.connect_transport(self.get_recv_transport().await, dtls_parameters)
             .await
     }
+    /// Connect a local transport with remote.
     async fn connect_transport(
         &self,
         transport: WebRtcTransport,
@@ -124,6 +117,7 @@ impl Session {
         Ok(transport.id())
     }
 
+    /// Create a local consumer.
     pub async fn consume(
         &self,
         local_pool: tokio_local::LocalPoolHandle,
@@ -153,6 +147,7 @@ impl Session {
         Ok(consumer)
     }
 
+    /// Resume a local consumer.
     pub async fn consumer_resume(&self, consumer_id: ConsumerId) -> Result<()> {
         match self.get_consumer(consumer_id) {
             Some(consumer) => Ok(consumer.resume().await?),
@@ -160,6 +155,7 @@ impl Session {
         }
     }
 
+    /// Create a local producer.
     pub async fn produce(
         &self,
         local_pool: tokio_local::LocalPoolHandle,
@@ -176,20 +172,6 @@ impl Session {
             .await
             .unwrap()?;
 
-        // register producer close handler (prevent announcing closed producers to new-joiners)
-        let weak_session = self.downgrade();
-        let weak_producer = producer.downgrade();
-        producer
-            .on_close(move || {
-                if let Some((session, producer)) =
-                    weak_session.upgrade().zip(weak_producer.upgrade())
-                {
-                    log::debug!("removing closed producer {}", producer.id());
-                    session.remove_producer(&producer);
-                }
-            })
-            .detach();
-
         self.add_producer(producer.clone());
 
         let room = self.get_room();
@@ -203,6 +185,7 @@ impl Session {
         Ok(producer)
     }
 
+    /// Create a local data consumer.
     pub async fn consume_data(
         &self,
         local_pool: tokio_local::LocalPoolHandle,
@@ -225,6 +208,7 @@ impl Session {
         Ok(data_consumer)
     }
 
+    /// Create a local data producer.
     pub async fn produce_data(
         &self,
         local_pool: tokio_local::LocalPoolHandle,
@@ -239,20 +223,6 @@ impl Session {
             })
             .await
             .unwrap()?;
-
-        // register data producer close handler (prevent announcing closed producers to new-joiners)
-        let weak_session = self.downgrade();
-        let weak_data_producer = data_producer.downgrade();
-        data_producer
-            .on_close(move || {
-                if let Some((session, data_producer)) =
-                    weak_session.upgrade().zip(weak_data_producer.upgrade())
-                {
-                    log::debug!("removing closed data producer {}", data_producer.id());
-                    session.remove_data_producer(&data_producer);
-                }
-            })
-            .detach();
 
         self.add_data_producer(data_producer.clone());
 
@@ -270,9 +240,6 @@ impl Session {
     pub fn id(&self) -> SessionId {
         self.shared.id
     }
-    pub fn role(&self) -> Role {
-        self.shared.role
-    }
     pub fn get_room(&self) -> Room {
         self.shared.room.clone()
     }
@@ -280,13 +247,6 @@ impl Session {
         WeakSession {
             shared: Arc::downgrade(&self.shared),
         }
-    }
-
-    pub fn on_closed<F: FnOnce(SessionId) + Send + Sync + 'static>(
-        &self,
-        callback: F,
-    ) -> HandlerId {
-        self.shared.handlers.closed.add(Box::new(callback))
     }
 
     pub async fn get_send_transport(&self) -> WebRtcTransport {
@@ -343,10 +303,7 @@ impl Session {
     }
     pub fn remove_producer(&self, producer: &Producer) {
         let mut state = self.shared.state.lock().unwrap();
-        let _ = state
-            .producers
-            .remove(&producer.id())
-            .expect("producer does not exist");
+        let _ = state.producers.remove(&producer.id()).unwrap();
     }
     pub fn get_producers(&self) -> Vec<Producer> {
         let state = self.shared.state.lock().unwrap();
@@ -361,10 +318,7 @@ impl Session {
     }
     pub fn remove_data_producer(&self, data_producer: &DataProducer) {
         let mut state = self.shared.state.lock().unwrap();
-        let _ = state
-            .data_producers
-            .remove(&data_producer.id())
-            .expect("data producer does not exist");
+        let _ = state.data_producers.remove(&data_producer.id()).unwrap();
     }
     pub fn get_data_producers(&self) -> Vec<DataProducer> {
         let state = self.shared.state.lock().unwrap();
@@ -391,12 +345,6 @@ impl WeakSession {
 impl Drop for Shared {
     fn drop(&mut self) {
         log::debug!("dropped session {}", self.id);
-        self.handlers.closed.call(|callback| callback(self.id));
+        self.room.remove_session(self.id);
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Role {
-    Vulcast,
-    WebClient,
 }

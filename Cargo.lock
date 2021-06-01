@@ -2063,7 +2063,6 @@ dependencies = [
  "clap",
  "derive_more",
  "env_logger",
- "event-listener-primitives",
  "futures",
  "log",
  "mediasoup",

@@ -21,6 +21,7 @@ use vulcan_relay::control_schema::{self, ControlSchema};
 use vulcan_relay::relay_server::{RelayServer, SessionToken};
 use vulcan_relay::signal_schema::{self};
 
+/// Warp rejection handler for GraphQL responses.
 async fn gql_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
     if let Some(async_graphql_warp::BadRequest(err)) = err.find() {
         return Ok::<_, Infallible>(warp::reply::with_status(
@@ -91,6 +92,7 @@ async fn main() {
                             if let Some(token) = token {
                                 let mut selected_token = selected_token_send.lock().unwrap();
                                 selected_token.replace(token);
+                                // create session from the selected token
                                 if let Some(weak_session) =
                                     relay_server_copy.session_from_token(token)
                                 {
@@ -102,6 +104,7 @@ async fn main() {
                     )
                     .await;
 
+                    // drop session on websocket close
                     let mut selected_token = selected_token.lock().unwrap();
                     if let Some(token) = selected_token.take() {
                         drop(relay_server.take_session_by_token(&token))

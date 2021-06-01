@@ -17,7 +17,7 @@ fn session_from_ctx(ctx: &Context<'_>) -> Result<Session, anyhow::Error> {
 pub struct QueryRoot;
 #[Object]
 impl QueryRoot {
-    /// Obtain initialization parameters for client-side mediasoup device
+    /// Obtain initialization parameters for client-side mediasoup device.
     async fn init(&self, ctx: &Context<'_>) -> Result<ServerInitParameters> {
         let session = session_from_ctx(ctx)?;
         let room = session.get_room();
@@ -48,14 +48,14 @@ impl QueryRoot {
 pub struct MutationRoot;
 #[Object]
 impl MutationRoot {
-    /// Provide initialization parameters for server-side mediasoup device
+    /// Provide initialization parameters for server-side mediasoup device.
     async fn init(&self, ctx: &Context<'_>, rtp_capabilities: RtpCapabilities) -> Result<bool> {
         let session = session_from_ctx(ctx)?;
         session.set_rtp_capabilities(rtp_capabilities.0);
         Ok(true)
     }
 
-    /// Provide connection parameters for server-side transport
+    /// Provide connection parameters for server-side transport.
     async fn connect_send_transport(
         &self,
         ctx: &Context<'_>,
@@ -67,7 +67,7 @@ impl MutationRoot {
         ))
     }
 
-    /// Provide connection parameters for server-side transport
+    /// Provide connection parameters for server-side transport.
     async fn connect_recv_transport(
         &self,
         ctx: &Context<'_>,
@@ -79,7 +79,7 @@ impl MutationRoot {
         ))
     }
 
-    /// Request consumption of media stream
+    /// Request consumption of media stream.
     async fn consume(&self, ctx: &Context<'_>, producer_id: ProducerId) -> Result<ConsumerOptions> {
         let local_pool = ctx.data_unchecked::<tokio_local::LocalPoolHandle>();
         let session = session_from_ctx(ctx)?;
@@ -92,14 +92,14 @@ impl MutationRoot {
         })
     }
 
-    /// Resume existing consumer
+    /// Resume existing consumer.
     async fn consumer_resume(&self, ctx: &Context<'_>, consumer_id: ConsumerId) -> Result<bool> {
         let session = session_from_ctx(ctx)?;
         session.consumer_resume(consumer_id.0).await?;
         Ok(true)
     }
 
-    /// Request production of media stream
+    /// Request production of media stream.
     async fn produce(
         &self,
         ctx: &Context<'_>,
@@ -116,7 +116,7 @@ impl MutationRoot {
         ))
     }
 
-    /// Request consumption of data stream
+    /// Request consumption of data stream.
     async fn consume_data(
         &self,
         ctx: &Context<'_>,
@@ -134,7 +134,7 @@ impl MutationRoot {
         })
     }
 
-    /// Request production of data stream
+    /// Request production of data stream.
     async fn produce_data(
         &self,
         ctx: &Context<'_>,
@@ -155,7 +155,7 @@ impl MutationRoot {
 pub struct SubscriptionRoot;
 #[Subscription]
 impl SubscriptionRoot {
-    /// Notify when new producers are available
+    /// Notify when new producers are available.
     async fn producer_available(
         &self,
         ctx: &Context<'_>,
@@ -164,7 +164,7 @@ impl SubscriptionRoot {
         let room = session.get_room();
         Ok(room.available_producers().map(ProducerId))
     }
-    /// Notify when new data producers are available
+    /// Notify when new data producers are available.
     async fn data_producer_available(
         &self,
         ctx: &Context<'_>,

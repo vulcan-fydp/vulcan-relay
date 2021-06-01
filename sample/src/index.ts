@@ -332,7 +332,7 @@ async function session(role: Role, token: string) {
                 });
 
                 receivePreview.srcObject = null;
-                receiveMediaStream = undefined; 
+                receiveMediaStream = undefined;
 
                 // listen for when new media producers are available
                 client.subscribe({
@@ -363,9 +363,13 @@ async function session(role: Role, token: string) {
 
                         // display media streams
                         if (receiveMediaStream) {
+                            if (consumer.track.kind == "video") {
+                                receiveMediaStream.getVideoTracks().forEach(track => receiveMediaStream?.removeTrack(track));
+                            } else if (consumer.track.kind == "audio") {
+                                receiveMediaStream.getAudioTracks().forEach(track => receiveMediaStream?.removeTrack(track));
+                            }
                             receiveMediaStream.addTrack(consumer.track);
                             receivePreview.srcObject = receiveMediaStream;
-                            // TODO we also need to allow overwriting audio/video tracks
                         } else {
                             receiveMediaStream = new MediaStream([consumer.track]);
                             receivePreview.srcObject = receiveMediaStream;
@@ -396,9 +400,10 @@ async function session(role: Role, token: string) {
                         console.log(role, "send data", data);
                         if (dataProducer.closed) {
                             clearInterval(handle);
+                            return;
                         }
                         dataProducer.send(data);
-                    }, 1000);
+                    }, 10000);
                 });
             });
             break;

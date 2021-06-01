@@ -11,7 +11,7 @@ use mediasoup::worker::Worker;
 use thiserror::Error;
 
 use crate::room::{Room, WeakRoom};
-use crate::session::{Role, Session, WeakSession};
+use crate::session::{Session, WeakSession};
 
 #[derive(Clone)]
 pub struct RelayServer {
@@ -61,6 +61,7 @@ impl RelayServer {
         }
     }
 
+    /// Register a room with specified FRID, associated to a Vulcast by FSID.
     pub fn register_room(
         &self,
         frid: ForeignRoomId,
@@ -69,35 +70,46 @@ impl RelayServer {
         let mut state = self.shared.state.lock().unwrap();
         match state.session_options.get(&vulcast_fsid) {
             Some(SessionOptions::Vulcast) => {
-                match state
-                    .registered_rooms
-                    .insert_no_overwrite(frid, vulcast_fsid)
-                {
-                    Ok(_) => Ok(()),
-                    Err((_, vulcast_session_id)) => {
-                        Err(RegisterRoomError::VulcastInRoom(vulcast_session_id))
-                    }
+                if state.registered_rooms.contains_left(&frid) {
+                    Err(RegisterRoomError::NonUniqueId(frid))
+                } else if state.registered_rooms.contains_right(&vulcast_fsid) {
+                    Err(RegisterRoomError::VulcastInRoom(vulcast_fsid))
+                } else {
+                    log::debug!(
+                        "registered room with frid {} for vulcast {}",
+                        &frid,
+                        &vulcast_fsid
+                    );
+                    state
+                        .registered_rooms
+                        .insert_no_overwrite(frid, vulcast_fsid)
+                        .unwrap();
+                    Ok(())
                 }
             }
             _ => Err(RegisterRoomError::UnknownSession(vulcast_fsid)),
         }
     }
 
-    pub fn unregister_room(&self, room_id: ForeignRoomId) -> Result<(), UnregisterRoomError> {
+    /// Unregister a room by FRID. This will also destroy all client sessions in the room (does not include Vulcast).
+    pub fn unregister_room(&self, frid: ForeignRoomId) -> Result<(), UnregisterRoomError> {
         let mut state = self.shared.state.lock().unwrap();
-        match state.registered_rooms.remove_by_left(&room_id) {
+        match state.registered_rooms.remove_by_left(&frid) {
             Some(_) => {
                 drop(state);
                 // nuke all client sessions in this room
-                self.get_client_sessions_in_room(room_id)
+                self.get_client_sessions_in_room(&frid)
                     .into_iter()
                     .for_each(|fsid| self.unregister_session(fsid).unwrap());
+                log::debug!("unregistered room with frid {}", frid);
                 Ok(())
             }
-            None => Err(UnregisterRoomError::UnknownRoom(room_id)),
+            None => Err(UnregisterRoomError::UnknownRoom(frid)),
         }
     }
 
+    /// Register a session with specified FSID. If the session is a WebClient,
+    /// it will be associated to the provided FRID.
     pub fn register_session(
         &self,
         fsid: ForeignSessionId,
@@ -114,6 +126,7 @@ impl RelayServer {
                 .insert_no_overwrite(fsid.clone(), session_token)
             {
                 Ok(_) => {
+                    log::debug!("registered session with fsid {}", &fsid);
                     state.session_options.insert(fsid, session_options.clone());
                     Ok(session_token)
                 }
@@ -122,6 +135,8 @@ impl RelayServer {
         }
     }
 
+    /// Unregister a session by FSID. This will drop the PHY session.
+    /// If the session belongs to a Vulcast, this will unregister the PHY room.
     pub fn unregister_session(&self, fsid: ForeignSessionId) -> Result<(), UnregisterSessionError> {
         let mut state = self.shared.state.lock().unwrap();
         // remove registration info
@@ -142,17 +157,20 @@ impl RelayServer {
                         drop(self.take_session(&fsid));
                     }
                 }
+                log::debug!("unregistered session with fsid {}", &fsid);
                 Ok(())
             }
             None => Err(UnregisterSessionError::UnknownSession(fsid)),
         }
     }
 
+    /// Take ownership of PHY session by FSID.
     pub fn take_session(&self, fsid: &ForeignSessionId) -> Option<Session> {
         let mut state = self.shared.state.lock().unwrap();
         state.sessions.remove(fsid)
     }
 
+    /// Take ownership of PHY session by session token.
     pub fn take_session_by_token(&self, token: &SessionToken) -> Option<Session> {
         let mut state = self.shared.state.lock().unwrap();
         state
@@ -162,6 +180,7 @@ impl RelayServer {
             .and_then(|fsid| state.sessions.remove(&fsid))
     }
 
+    /// Create PHY session from session token, obtained via registration.
     pub fn session_from_token(&self, token: SessionToken) -> Option<WeakSession> {
         let mut state = self.shared.state.lock().unwrap();
 
@@ -195,11 +214,7 @@ impl RelayServer {
         state.rooms.insert(vulcast_fsid, room.downgrade()); // may re-insert
 
         // create and bind session to room
-        let session = Session::new(
-            room.clone(),
-            Role::from(session_options),
-            self.shared.transport_options.clone(),
-        );
+        let session = Session::new(room.clone(), self.shared.transport_options.clone());
         room.add_session(session.clone());
 
         // store owning session
@@ -207,7 +222,8 @@ impl RelayServer {
         Some(session.downgrade())
     }
 
-    fn get_client_sessions_in_room(&self, frid: ForeignRoomId) -> Vec<ForeignSessionId> {
+    /// Get all client sessions in the given room, specified by FRID.
+    fn get_client_sessions_in_room(&self, frid: &ForeignRoomId) -> Vec<ForeignSessionId> {
         let state = self.shared.state.lock().unwrap();
         state
             .registered_sessions
@@ -217,7 +233,7 @@ impl RelayServer {
                     .session_options
                     .get(&fsid)
                     .filter(|session_options| match session_options {
-                        SessionOptions::WebClient(client_frid) => *client_frid == frid,
+                        SessionOptions::WebClient(client_frid) => client_frid == frid,
                         _ => false,
                     })
                     .and(Some(fsid))
@@ -257,14 +273,6 @@ impl SessionToken {
 pub enum SessionOptions {
     Vulcast,
     WebClient(ForeignRoomId),
-}
-impl From<SessionOptions> for Role {
-    fn from(session_options: SessionOptions) -> Self {
-        match session_options {
-            SessionOptions::Vulcast => Role::Vulcast,
-            SessionOptions::WebClient(_) => Role::WebClient,
-        }
-    }
 }
 
 #[derive(Debug, Error, PartialEq, Eq, PartialOrd, Ord)]
