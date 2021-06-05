@@ -47,7 +47,7 @@ let clientSub: SubscriptionClient | null = null;
         mutation: gql`
                 mutation($sessionId: ID!){
                     registerVulcastSession(sessionId: $sessionId) {
-                        ... on Session {
+                        ... on SessionWithToken {
                             id,
                             accessToken
                         }
@@ -101,7 +101,7 @@ let clientSub: SubscriptionClient | null = null;
         mutation: gql`
                 mutation($sessionId: ID!, $roomId: ID!){
                     registerClientSession(sessionId: $sessionId, roomId: $roomId) {
-                        ... on Session {
+                        ... on SessionWithToken {
                             id,
                             accessToken
                         }
