@@ -66,9 +66,9 @@ impl MutationRoot {
             ForeignSessionId(session_id.clone().into()),
             SessionOptions::Vulcast,
         ) {
-            Ok(session_token) => RegisterSessionResult::Ok(Session {
+            Ok(session_token) => RegisterSessionResult::Ok(SessionWithToken {
                 id: session_id,
-                access_token: Some(session_token.into()),
+                access_token: session_token.into(),
             }),
             Err(err) => err.into(),
         }
@@ -88,9 +88,9 @@ impl MutationRoot {
             ForeignSessionId(session_id.clone().into()),
             SessionOptions::WebClient(ForeignRoomId(room_id.into())),
         ) {
-            Ok(session_token) => RegisterSessionResult::Ok(Session {
+            Ok(session_token) => RegisterSessionResult::Ok(SessionWithToken {
                 id: session_id,
-                access_token: Some(session_token.into()),
+                access_token: session_token.into(),
             }),
             Err(err) => err.into(),
         }
@@ -104,10 +104,7 @@ impl MutationRoot {
     ) -> UnregisterSessionResult {
         let relay_server = ctx.data_unchecked::<RelayServer>();
         match relay_server.unregister_session(ForeignSessionId(session_id.clone().into())) {
-            Ok(_) => UnregisterSessionResult::Ok(Session {
-                id: session_id,
-                access_token: None,
-            }),
+            Ok(_) => UnregisterSessionResult::Ok(Session { id: session_id }),
             Err(err) => err.into(),
         }
     }
@@ -121,7 +118,12 @@ struct Room {
 #[derive(SimpleObject)]
 struct Session {
     id: ID,
-    access_token: Option<ID>,
+}
+
+#[derive(SimpleObject)]
+struct SessionWithToken {
+    id: ID,
+    access_token: ID,
 }
 
 /// The Vulcast is already in another room.
@@ -164,7 +166,6 @@ impl From<RegisterRoomError> for RegisterRoomResult {
                 RegisterRoomResult::UnknownSession(UnknownSessionError {
                     session: Session {
                         id: foreign_session_id.into(),
-                        access_token: None,
                     },
                 })
             }
@@ -172,7 +173,6 @@ impl From<RegisterRoomError> for RegisterRoomResult {
                 RegisterRoomResult::VulcastInRoom(VulcastInRoomError {
                     vulcast: Session {
                         id: foreign_session_id.into(),
-                        access_token: None,
                     },
                 })
             }
@@ -201,7 +201,7 @@ impl From<UnregisterRoomError> for UnregisterRoomResult {
 
 #[derive(Union)]
 enum RegisterSessionResult {
-    Ok(Session),
+    Ok(SessionWithToken),
     UnknownRoom(UnknownRoomError),
     NonUniqueId(NonUniqueIdError),
 }
@@ -236,7 +236,6 @@ impl From<UnregisterSessionError> for UnregisterSessionResult {
                 UnregisterSessionResult::UnknownSession(UnknownSessionError {
                     session: Session {
                         id: foreign_session_id.into(),
-                        access_token: None,
                     },
                 })
             }
