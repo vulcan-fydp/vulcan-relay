@@ -136,6 +136,6 @@ fn main() -> Result<(), anyhow::Error> {
 
     println!("Press Enter to end session...");
     let _ = std::io::stdin().read(&mut [0u8]).unwrap();
-    
+
     Ok(())
 }
