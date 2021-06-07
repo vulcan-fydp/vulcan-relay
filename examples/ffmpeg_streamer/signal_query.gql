@@ -1,0 +1,7 @@
+query RecvPlainTransportOptions {
+    recvPlainTransportOptions
+}
+
+mutation ProducePlain($kind: MediaKind!, $rtpParameters: RtpParameters!) {
+    producePlain(kind: $kind, rtpParameters: $rtpParameters)
+}

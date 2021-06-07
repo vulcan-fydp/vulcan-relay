@@ -5,9 +5,8 @@ use uuid::Uuid;
 
 use bimap::BiMap;
 use derive_more::Display;
-use mediasoup::rtp_parameters::RtpCodecCapability;
-use mediasoup::webrtc_transport::WebRtcTransportOptions;
-use mediasoup::worker::Worker;
+use mediasoup::data_structures::TransportListenIp;
+use mediasoup::{rtp_parameters::RtpCodecCapability, worker::Worker};
 use thiserror::Error;
 
 use crate::room::{Room, WeakRoom};
@@ -21,7 +20,7 @@ pub struct RelayServer {
 struct Shared {
     state: Mutex<State>,
 
-    transport_options: WebRtcTransportOptions,
+    transport_listen_ip: TransportListenIp,
     media_codecs: Vec<RtpCodecCapability>,
     worker: Worker,
 }
@@ -42,7 +41,7 @@ struct State {
 impl RelayServer {
     pub fn new(
         worker: Worker,
-        transport_options: WebRtcTransportOptions,
+        transport_listen_ip: TransportListenIp,
         media_codecs: Vec<RtpCodecCapability>,
     ) -> Self {
         Self {
@@ -55,7 +54,7 @@ impl RelayServer {
                     sessions: HashMap::new(),
                 }),
                 media_codecs,
-                transport_options,
+                transport_listen_ip,
                 worker,
             }),
         }
@@ -75,11 +74,7 @@ impl RelayServer {
                 } else if state.registered_rooms.contains_right(&vulcast_fsid) {
                     Err(RegisterRoomError::VulcastInRoom(vulcast_fsid))
                 } else {
-                    log::debug!(
-                        "registered room with frid {} for vulcast {}",
-                        &frid,
-                        &vulcast_fsid
-                    );
+                    log::debug!("+foreign room {} (vulcast fsid {})", &frid, &vulcast_fsid);
                     state
                         .registered_rooms
                         .insert_no_overwrite(frid, vulcast_fsid)
@@ -101,7 +96,7 @@ impl RelayServer {
                 self.get_client_sessions_in_room(&frid)
                     .into_iter()
                     .for_each(|fsid| self.unregister_session(fsid).unwrap());
-                log::debug!("unregistered room with frid {}", frid);
+                log::debug!("-foreign room {}", frid);
                 Ok(())
             }
             None => Err(UnregisterRoomError::UnknownRoom(frid)),
@@ -126,7 +121,7 @@ impl RelayServer {
                 .insert_no_overwrite(fsid.clone(), session_token)
             {
                 Ok(_) => {
-                    log::debug!("registered session with fsid {}", &fsid);
+                    log::debug!("+foreign session {} [{:?}]", &fsid, session_options);
                     state.session_options.insert(fsid, session_options.clone());
                     Ok(session_token)
                 }
@@ -157,7 +152,7 @@ impl RelayServer {
                         drop(self.take_session(&fsid));
                     }
                 }
-                log::debug!("unregistered session with fsid {}", &fsid);
+                log::debug!("-foreign session {} [{:?}]", &fsid, session_options);
                 Ok(())
             }
             None => Err(UnregisterSessionError::UnknownSession(fsid)),
@@ -214,8 +209,7 @@ impl RelayServer {
         state.rooms.insert(vulcast_fsid, room.downgrade()); // may re-insert
 
         // create and bind session to room
-        let session = Session::new(room.clone(), self.shared.transport_options.clone());
-        room.add_session(session.clone());
+        let session = Session::new(room.clone(), self.shared.transport_listen_ip);
 
         // store owning session
         state.sessions.insert(foreign_session_id, session.clone());
@@ -269,7 +263,7 @@ impl SessionToken {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum SessionOptions {
     Vulcast,
     WebClient(ForeignRoomId),

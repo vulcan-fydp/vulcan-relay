@@ -1,6 +1,6 @@
 use futures::stream::StreamExt;
 
-use mediasoup::rtp_parameters::MediaKind;
+use mediasoup::{rtp_parameters::MediaKind, transport::Transport};
 
 use vulcan_relay::relay_server::{ForeignRoomId, ForeignSessionId, SessionOptions};
 
@@ -41,24 +41,30 @@ async fn producer_consumer_connected_after_signalling() {
         .upgrade()
         .unwrap();
 
+    let vulcast_send_transport = vulcast.create_webrtc_transport().await;
+    let vulcast_recv_transport = vulcast.create_webrtc_transport().await;
+
+    let webclient_send_transport = webclient.create_webrtc_transport().await;
+    let webclient_recv_transport = webclient.create_webrtc_transport().await;
+
     vulcast.set_rtp_capabilities(fixture::consumer_device_capabilities());
     webclient.set_rtp_capabilities(fixture::consumer_device_capabilities());
 
     vulcast
-        .connect_send_transport(fixture::dtls_parameters())
+        .connect_webrtc_transport(vulcast_send_transport.id(), fixture::dtls_parameters())
         .await
         .unwrap();
     vulcast
-        .connect_recv_transport(fixture::dtls_parameters())
+        .connect_webrtc_transport(vulcast_recv_transport.id(), fixture::dtls_parameters())
         .await
         .unwrap();
 
     webclient
-        .connect_send_transport(fixture::dtls_parameters())
+        .connect_webrtc_transport(webclient_send_transport.id(), fixture::dtls_parameters())
         .await
         .unwrap();
     webclient
-        .connect_recv_transport(fixture::dtls_parameters())
+        .connect_webrtc_transport(webclient_recv_transport.id(), fixture::dtls_parameters())
         .await
         .unwrap();
 
@@ -70,6 +76,7 @@ async fn producer_consumer_connected_after_signalling() {
     let _audio_producer = vulcast
         .produce(
             local_pool.clone(),
+            vulcast_send_transport.id(),
             MediaKind::Audio,
             fixture::audio_producer_device_parameters(),
         )
@@ -78,6 +85,7 @@ async fn producer_consumer_connected_after_signalling() {
     let _video_producer = vulcast
         .produce(
             local_pool.clone(),
+            vulcast_send_transport.id(),
             MediaKind::Video,
             fixture::video_producer_device_parameters(),
         )
@@ -85,7 +93,11 @@ async fn producer_consumer_connected_after_signalling() {
         .unwrap();
 
     let _data_producer = webclient
-        .produce_data(local_pool.clone(), fixture::sctp_stream_parameters())
+        .produce_data(
+            local_pool.clone(),
+            webclient_send_transport.id(),
+            fixture::sctp_stream_parameters(),
+        )
         .await
         .unwrap();
 
@@ -93,19 +105,31 @@ async fn producer_consumer_connected_after_signalling() {
     let producer_id2 = producer_stream.next().await.unwrap();
 
     let _consumer1 = webclient
-        .consume(local_pool.clone(), producer_id1)
+        .consume(
+            local_pool.clone(),
+            webclient_recv_transport.id(),
+            producer_id1,
+        )
         .await
         .unwrap();
 
     let _consumer2 = webclient
-        .consume(local_pool.clone(), producer_id2)
+        .consume(
+            local_pool.clone(),
+            webclient_recv_transport.id(),
+            producer_id2,
+        )
         .await
         .unwrap();
 
     let data_producer_id1 = data_producer_stream.next().await.unwrap();
 
     let _data_consumer1 = vulcast
-        .consume_data(local_pool.clone(), data_producer_id1)
+        .consume_data(
+            local_pool.clone(),
+            vulcast_recv_transport.id(),
+            data_producer_id1,
+        )
         .await
         .unwrap();
 }

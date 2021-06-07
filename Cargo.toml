@@ -6,12 +6,11 @@ edition = "2018"
 default-run = "vulcan-relay"
 build = "build.rs"
 
-# there's a bug that prevents compiling w/ gcc11 with an upstream fix
-[patch.crates-io]
-mediasoup = { git = "https://github.com/versatica/mediasoup", branch = "v3" }
+# [patch.crates-io]
+# mediasoup = { git = "https://github.com/versatica/mediasoup", branch = "v3" }
 
 [dependencies]
-mediasoup = "0.7.1"
+mediasoup = "0.7"
 
 log = "0.4.14"
 env_logger = "0.8.3"
@@ -37,6 +36,12 @@ async-graphql-warp = "2.8.4"
 
 [build-dependencies]
 built = "0.5"
+
+[dev-dependencies]
+graphql_client = "0.9"
+tungstenite = { version = "0.13", features = ["native-tls"] }
+native-tls = "0.2"
+http = "0.2"
 
 [workspace]
 members = ["tokio-local"]

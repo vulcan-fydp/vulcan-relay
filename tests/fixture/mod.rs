@@ -1,17 +1,18 @@
 use std::num::{NonZeroU32, NonZeroU8};
 
-use mediasoup::data_structures::TransportListenIp;
-use mediasoup::data_structures::{DtlsFingerprint, DtlsParameters, DtlsRole};
-use mediasoup::rtp_parameters::{
-    MediaKind, MimeTypeAudio, MimeTypeVideo, RtcpFeedback, RtcpParameters, RtpCapabilities,
-    RtpCodecCapability, RtpCodecParameters, RtpCodecParametersParameters, RtpEncodingParameters,
-    RtpEncodingParametersRtx, RtpHeaderExtension, RtpHeaderExtensionDirection,
-    RtpHeaderExtensionParameters, RtpHeaderExtensionUri, RtpParameters,
+use mediasoup::{
+    data_structures::{DtlsFingerprint, DtlsParameters, DtlsRole, TransportListenIp},
+    rtp_parameters::{
+        MediaKind, MimeTypeAudio, MimeTypeVideo, RtcpFeedback, RtcpParameters, RtpCapabilities,
+        RtpCodecCapability, RtpCodecParameters, RtpCodecParametersParameters,
+        RtpEncodingParameters, RtpEncodingParametersRtx, RtpHeaderExtension,
+        RtpHeaderExtensionDirection, RtpHeaderExtensionParameters, RtpHeaderExtensionUri,
+        RtpParameters,
+    },
+    sctp_parameters::SctpStreamParameters,
+    worker::WorkerSettings,
+    worker_manager::WorkerManager,
 };
-use mediasoup::sctp_parameters::SctpStreamParameters;
-use mediasoup::webrtc_transport::{TransportListenIps, WebRtcTransportOptions};
-use mediasoup::worker::WorkerSettings;
-use mediasoup::worker_manager::WorkerManager;
 
 use vulcan_relay::relay_server::RelayServer;
 
@@ -21,17 +22,14 @@ pub async fn relay_server() -> RelayServer {
         .create_worker(WorkerSettings::default())
         .await
         .unwrap();
-    RelayServer::new(worker, local_transport_options(), media_codecs())
-}
-
-pub fn local_transport_options() -> WebRtcTransportOptions {
-    let mut transport_options =
-        WebRtcTransportOptions::new(TransportListenIps::new(TransportListenIp {
+    RelayServer::new(
+        worker,
+        TransportListenIp {
             ip: "127.0.0.1".parse().unwrap(),
             announced_ip: None,
-        }));
-    transport_options.enable_sctp = true; // required for data channel
-    transport_options
+        },
+        media_codecs(),
+    )
 }
 
 pub fn media_codecs() -> Vec<RtpCodecCapability> {
