@@ -209,7 +209,7 @@ impl RelayServer {
         state.rooms.insert(vulcast_fsid, room.downgrade()); // may re-insert
 
         // create and bind session to room
-        let session = Session::new(room.clone(), self.shared.transport_listen_ip);
+        let session = Session::new(room, self.shared.transport_listen_ip);
 
         // store owning session
         state.sessions.insert(foreign_session_id, session.clone());

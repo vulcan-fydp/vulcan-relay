@@ -1,7 +1,7 @@
-query RecvPlainTransportOptions {
-    recvPlainTransportOptions
+mutation CreateRecvPlainTransport {
+    createRecvPlainTransport
 }
 
-mutation ProducePlain($kind: MediaKind!, $rtpParameters: RtpParameters!) {
-    producePlain(kind: $kind, rtpParameters: $rtpParameters)
+mutation ProducePlain($transportId: TransportId!, $kind: MediaKind!, $rtpParameters: RtpParameters!) {
+    producePlain(transportId: $transportId, kind: $kind, rtpParameters: $rtpParameters)
 }

@@ -1,23 +1,9 @@
 type QueryRoot {
 	"""
-	WebRTC send transport parameters.
-	"""
-	sendWebrtcTransportOptions: TransportOptions!
-	"""
-	WebRTC receive transport parameters.
-	"""
-	recvWebrtcTransportOptions: TransportOptions!
-	"""
-	Plain receive transport connection parameters.
-	"""
-	recvPlainTransportOptions: TransportTuple!
-	"""
 	Server-side WebRTC RTP capabilities for WebRTC negotiation.
 	"""
 	serverRtpCapabilities: RtpCapabilitiesFinalized!
 }
-scalar TransportOptions
-scalar TransportTuple
 scalar RtpCapabilitiesFinalized
 type MutationRoot {
 	"""
@@ -25,17 +11,21 @@ type MutationRoot {
 	"""
 	rtpCapabilities(rtpCapabilities: RtpCapabilities!): Boolean!
 	"""
+	WebRTC transport parameters.
+	"""
+	createWebrtcTransport: WebRtcTransportOptions!
+	"""
+	Plain receive transport connection parameters.
+	"""
+	createRecvPlainTransport: PlainTransportOptions!
+	"""
 	Provide connection parameters for server-side WebRTC transport.
 	"""
-	connectSendWebrtcTransport(dtlsParameters: DtlsParameters!): TransportId!
-	"""
-	Provide connection parameters for server-side transport.
-	"""
-	connectRecvWebrtcTransport(dtlsParameters: DtlsParameters!): TransportId!
+	connectWebrtcTransport(transportId: TransportId!, dtlsParameters: DtlsParameters!): TransportId!
 	"""
 	Request consumption of media stream.
 	"""
-	consume(producerId: ProducerId!): ConsumerOptions!
+	consume(transportId: TransportId!, producerId: ProducerId!): ConsumerOptions!
 	"""
 	Resume existing consumer.
 	"""
@@ -43,23 +33,25 @@ type MutationRoot {
 	"""
 	Request production of media stream.
 	"""
-	produce(kind: MediaKind!, rtpParameters: RtpParameters!): ProducerId!
+	produce(transportId: TransportId!, kind: MediaKind!, rtpParameters: RtpParameters!): ProducerId!
 	"""
 	Request production of a media stream on plain transport.
 	"""
-	producePlain(kind: MediaKind!, rtpParameters: RtpParameters!): ProducerId!
+	producePlain(transportId: TransportId!, kind: MediaKind!, rtpParameters: RtpParameters!): ProducerId!
 	"""
 	Request consumption of data stream.
 	"""
-	consumeData(dataProducerId: DataProducerId!): DataConsumerOptions!
+	consumeData(transportId: TransportId!, dataProducerId: DataProducerId!): DataConsumerOptions!
 	"""
 	Request production of data stream.
 	"""
-	produceData(sctpStreamParameters: SctpStreamParameters!): DataProducerId!
+	produceData(transportId: TransportId!, sctpStreamParameters: SctpStreamParameters!): DataProducerId!
 }
 scalar RtpCapabilities
-scalar DtlsParameters
+scalar WebRtcTransportOptions
+scalar PlainTransportOptions
 scalar TransportId
+scalar DtlsParameters
 scalar ProducerId
 scalar ConsumerOptions
 scalar ConsumerId

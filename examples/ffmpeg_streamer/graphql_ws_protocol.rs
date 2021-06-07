@@ -92,7 +92,8 @@ impl<Stream: Read + Write> GraphQLClient<Stream> {
             match self.recv() {
                 ServerMessage::Data { id, payload } => {
                     assert_eq!(id, self.id.to_string());
-                    let response: Response<Query::ResponseData> = serde_json::from_value(payload).unwrap();
+                    let response: Response<Query::ResponseData> =
+                        serde_json::from_value(payload).unwrap();
                     match self.recv() {
                         ServerMessage::Complete { id } => {
                             assert_eq!(id, self.id.to_string());

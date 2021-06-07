@@ -67,15 +67,31 @@ fn main() -> Result<(), anyhow::Error> {
         socket,
         Some(serde_json::to_value(SessionToken { token: opts.token })?),
     );
-    let data = client.query::<signal_schema::RecvPlainTransportOptions>(
-        signal_schema::recv_plain_transport_options::Variables,
+    let audio_transport_options = client
+        .query::<signal_schema::CreateRecvPlainTransport>(
+            signal_schema::create_recv_plain_transport::Variables,
+        )
+        .create_recv_plain_transport;
+    let video_transport_options = client
+        .query::<signal_schema::CreateRecvPlainTransport>(
+            signal_schema::create_recv_plain_transport::Variables,
+        )
+        .create_recv_plain_transport;
+
+    let audio_transport_id = audio_transport_options.id;
+    let video_transport_id = video_transport_options.id;
+
+    log::debug!(
+        "audio plain transport options: {:?}",
+        audio_transport_options
     );
     log::debug!(
-        "plain transport options: {:?}",
-        data.recv_plain_transport_options
+        "video plain transport options: {:?}",
+        video_transport_options
     );
-    let data2 =
-        client.query::<signal_schema::ProducePlain>(signal_schema::produce_plain::Variables {
+    let audio_producer_id = client
+        .query::<signal_schema::ProducePlain>(signal_schema::produce_plain::Variables {
+            transport_id: audio_transport_id,
             kind: MediaKind::Audio,
             rtp_parameters: RtpParameters {
                 codecs: vec![RtpCodecParameters::Audio {
@@ -92,11 +108,13 @@ fn main() -> Result<(), anyhow::Error> {
                 }],
                 ..RtpParameters::default()
             },
-        });
-    log::debug!("audio producer: {:?}", data2.produce_plain);
+        })
+        .produce_plain;
+    log::debug!("audio producer: {:?}", audio_producer_id);
 
-    let data3 =
-        client.query::<signal_schema::ProducePlain>(signal_schema::produce_plain::Variables {
+    let video_producer_id = client
+        .query::<signal_schema::ProducePlain>(signal_schema::produce_plain::Variables {
+            transport_id: video_transport_id,
             kind: MediaKind::Video,
             rtp_parameters: RtpParameters {
                 codecs: vec![RtpCodecParameters::Video {
@@ -112,11 +130,12 @@ fn main() -> Result<(), anyhow::Error> {
                 }],
                 ..RtpParameters::default()
             },
-        });
-    log::debug!("video producer: {:?}", data3.produce_plain);
+        })
+        .produce_plain;
+    log::debug!("video producer: {:?}", video_producer_id);
 
     println!("Press Enter to end session...");
-
     let _ = std::io::stdin().read(&mut [0u8]).unwrap();
+    
     Ok(())
 }
