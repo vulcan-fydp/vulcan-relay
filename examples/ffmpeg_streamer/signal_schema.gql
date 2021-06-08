@@ -1,0 +1,78 @@
+type QueryRoot {
+	"""
+	Server-side WebRTC RTP capabilities for WebRTC negotiation.
+	"""
+	serverRtpCapabilities: RtpCapabilitiesFinalized!
+}
+scalar RtpCapabilitiesFinalized
+type MutationRoot {
+	"""
+	Client-side RTP capabilities for WebRTC negotiation.
+	"""
+	rtpCapabilities(rtpCapabilities: RtpCapabilities!): Boolean!
+	"""
+	WebRTC transport parameters.
+	"""
+	createWebrtcTransport: WebRtcTransportOptions!
+	"""
+	Plain receive transport connection parameters.
+	"""
+	createRecvPlainTransport: PlainTransportOptions!
+	"""
+	Provide connection parameters for server-side WebRTC transport.
+	"""
+	connectWebrtcTransport(transportId: TransportId!, dtlsParameters: DtlsParameters!): TransportId!
+	"""
+	Request consumption of media stream.
+	"""
+	consume(transportId: TransportId!, producerId: ProducerId!): ConsumerOptions!
+	"""
+	Resume existing consumer.
+	"""
+	consumerResume(consumerId: ConsumerId!): Boolean!
+	"""
+	Request production of media stream.
+	"""
+	produce(transportId: TransportId!, kind: MediaKind!, rtpParameters: RtpParameters!): ProducerId!
+	"""
+	Request production of a media stream on plain transport.
+	"""
+	producePlain(transportId: TransportId!, kind: MediaKind!, rtpParameters: RtpParameters!): ProducerId!
+	"""
+	Request consumption of data stream.
+	"""
+	consumeData(transportId: TransportId!, dataProducerId: DataProducerId!): DataConsumerOptions!
+	"""
+	Request production of data stream.
+	"""
+	produceData(transportId: TransportId!, sctpStreamParameters: SctpStreamParameters!): DataProducerId!
+}
+scalar RtpCapabilities
+scalar WebRtcTransportOptions
+scalar PlainTransportOptions
+scalar TransportId
+scalar DtlsParameters
+scalar ProducerId
+scalar ConsumerOptions
+scalar ConsumerId
+scalar MediaKind
+scalar RtpParameters
+scalar DataProducerId
+scalar DataConsumerOptions
+scalar SctpStreamParameters
+type SubscriptionRoot {
+	"""
+	Notify when new producers are available.
+	"""
+	producerAvailable: ProducerId!
+	"""
+	Notify when new data producers are available.
+	"""
+	dataProducerAvailable: DataProducerId!
+}
+schema {
+	query: QueryRoot
+	mutation: MutationRoot
+	subscription: SubscriptionRoot
+}
+

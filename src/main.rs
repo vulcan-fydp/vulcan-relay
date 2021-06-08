@@ -6,34 +6,26 @@ use std::sync::{Arc, Mutex};
 
 use async_graphql::http::{playground_source, GraphQLPlaygroundConfig};
 use clap::Clap;
-use mediasoup::data_structures::TransportListenIp;
-use mediasoup::rtp_parameters::{
-    MimeTypeAudio, MimeTypeVideo, RtcpFeedback, RtpCodecCapability, RtpCodecParametersParameters,
+use mediasoup::{
+    data_structures::TransportListenIp,
+    rtp_parameters::{
+        MimeTypeAudio, MimeTypeVideo, RtcpFeedback, RtpCodecCapability,
+        RtpCodecParametersParameters,
+    },
+    worker::WorkerSettings,
+    worker_manager::WorkerManager,
 };
-use mediasoup::webrtc_transport::{TransportListenIps, WebRtcTransportOptions};
-use mediasoup::worker::WorkerSettings;
-use mediasoup::worker_manager::WorkerManager;
-use warp::http::{Response as HttpResponse, StatusCode};
-use warp::{Filter, Rejection, Reply};
+use warp::{
+    http::{Response as HttpResponse, StatusCode},
+    Filter, Rejection, Reply,
+};
 
-use vulcan_relay::cmdline::Opts;
-use vulcan_relay::control_schema::{self, ControlSchema};
-use vulcan_relay::relay_server::{RelayServer, SessionToken};
-use vulcan_relay::signal_schema::{self};
-
-/// Warp rejection handler for GraphQL responses.
-async fn gql_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
-    if let Some(async_graphql_warp::BadRequest(err)) = err.find() {
-        return Ok::<_, Infallible>(warp::reply::with_status(
-            err.to_string(),
-            StatusCode::BAD_REQUEST,
-        ));
-    }
-    Ok(warp::reply::with_status(
-        "INTERNAL_SERVER_ERROR".to_string(),
-        StatusCode::INTERNAL_SERVER_ERROR,
-    ))
-}
+use vulcan_relay::{
+    cmdline::Opts,
+    control_schema::{self, ControlSchema},
+    relay_server::{RelayServer, SessionToken},
+    signal_schema::{self},
+};
 
 #[tokio::main]
 async fn main() {
@@ -43,12 +35,10 @@ async fn main() {
 
     let opts: Opts = Opts::parse();
 
-    let mut transport_options =
-        WebRtcTransportOptions::new(TransportListenIps::new(TransportListenIp {
-            ip: opts.rtc_ip.parse().unwrap(),
-            announced_ip: opts.rtc_announce_ip.and_then(|x| x.parse().ok()),
-        }));
-    transport_options.enable_sctp = true; // required for data channel
+    let transport_listen_ip = TransportListenIp {
+        ip: opts.rtc_ip.parse().unwrap(),
+        announced_ip: opts.rtc_announce_ip.and_then(|x| x.parse().ok()),
+    };
     let media_codecs = media_codecs();
 
     let worker_manager = WorkerManager::new();
@@ -56,7 +46,7 @@ async fn main() {
         .create_worker(WorkerSettings::default())
         .await
         .unwrap();
-    let relay_server = RelayServer::new(worker, transport_options, media_codecs);
+    let relay_server = RelayServer::new(worker, transport_listen_ip, media_codecs);
 
     let signal_schema = signal_schema::schema();
     let control_schema = control_schema::schema(relay_server.clone());
@@ -185,4 +175,39 @@ fn media_codecs() -> Vec<RtpCodecCapability> {
             ],
         },
     ]
+}
+
+/// Warp rejection handler for GraphQL responses.
+async fn gql_rejection(rej: Rejection) -> Result<impl Reply, Infallible> {
+    if rej.is_not_found() {
+        Ok(warp::reply::with_status(
+            "NOT_FOUND".to_string(),
+            StatusCode::NOT_FOUND,
+        ))
+    } else if let Some(err) = rej.find::<warp::filters::body::BodyDeserializeError>() {
+        Ok(warp::reply::with_status(
+            err.to_string(),
+            StatusCode::BAD_REQUEST,
+        ))
+    } else if let Some(err) = rej.find::<warp::reject::MethodNotAllowed>() {
+        Ok(warp::reply::with_status(
+            err.to_string(),
+            StatusCode::METHOD_NOT_ALLOWED,
+        ))
+    } else if let Some(err) = rej.find::<async_graphql_warp::BadRequest>() {
+        Ok(warp::reply::with_status(
+            err.to_string(),
+            StatusCode::BAD_REQUEST,
+        ))
+    } else if let Some(err) = rej.find::<warp::reject::InvalidHeader>() {
+        Ok(warp::reply::with_status(
+            err.to_string(),
+            StatusCode::BAD_REQUEST,
+        ))
+    } else {
+        Ok(warp::reply::with_status(
+            "INTERNAL_SERVER_ERROR".to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ))
+    }
 }

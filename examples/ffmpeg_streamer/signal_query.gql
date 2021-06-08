@@ -1,0 +1,7 @@
+mutation CreateRecvPlainTransport {
+    createRecvPlainTransport
+}
+
+mutation ProducePlain($transportId: TransportId!, $kind: MediaKind!, $rtpParameters: RtpParameters!) {
+    producePlain(transportId: $transportId, kind: $kind, rtpParameters: $rtpParameters)
+}

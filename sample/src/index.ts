@@ -8,6 +8,7 @@ import { Device } from 'mediasoup-client';
 import { WebSocketLink } from '@apollo/client/link/ws';
 import { ApolloClient, NormalizedCacheObject, InMemoryCache, gql, FetchResult, HttpLink } from '@apollo/client/core';
 import { SubscriptionClient } from "subscriptions-transport-ws";
+import { DtlsParameters } from 'mediasoup-client/lib/Transport';
 
 declare global {
     interface HTMLCanvasElement {
@@ -151,7 +152,7 @@ let clientSub: SubscriptionClient | null = null;
 
 (document.getElementById("registerRoom") as HTMLButtonElement).addEventListener("click", async function () {
     let client = getControlConnection();
-    let result = await client.mutate({
+    await client.mutate({
         mutation: gql`
                 mutation($vulcastSessionId: ID!, $roomId: ID!){
                     registerRoom(vulcastSessionId: $vulcastSessionId, roomId: $roomId) {
@@ -168,12 +169,11 @@ let clientSub: SubscriptionClient | null = null;
     }).then(response => {
         let data = response.data.registerRoom;
         console.log('registerRoom', data.__typename, data);
-        return data?.id;
     });
 }, false);
 (document.getElementById("unregisterRoom") as HTMLButtonElement).addEventListener("click", async function () {
     let client = getControlConnection();
-    let result = await client.mutate({
+    await client.mutate({
         mutation: gql`
                 mutation($roomId: ID!){
                     unregisterRoom(roomId: $roomId) {
@@ -189,9 +189,7 @@ let clientSub: SubscriptionClient | null = null;
     }).then(response => {
         let data = response.data.unregisterRoom;
         console.log('unregisterRoom', data.__typename, data);
-        return data?.id;
     });
-    clientToken(result);
 }, false);
 
 // const canvas = document.querySelector('canvas') as HTMLCanvasElement;
@@ -247,65 +245,67 @@ async function session(role: Role, token: string) {
     let init_promise = client.query({ // query relay for init parameters
         query: gql`
         query {
-            init {
-                sendTransportOptions,
-                recvTransportOptions, 
-                routerRtpCapabilities
-            }
+            serverRtpCapabilities
         }
         ` }).then(async (initParams) => {
             console.log(role, "received server init", initParams.data);
             // load init params into device
-            await device.load({ routerRtpCapabilities: jsonClone(initParams.data.init.routerRtpCapabilities) });
+            await device.load({ routerRtpCapabilities: jsonClone(initParams.data.serverRtpCapabilities) });
 
             // send init params back to relay
-            return client.mutate({
+            await client.mutate({
                 mutation: gql`
                 mutation($rtpCapabilities: RtpCapabilities!){
-                    init(rtpCapabilities: $rtpCapabilities)
+                    rtpCapabilities(rtpCapabilities: $rtpCapabilities)
                 }
                 `,
                 variables: {
                     rtpCapabilities: device.rtpCapabilities
                 }
-            }).then(() => {
-                return initParams;
-            })
-        }).then(async initParams => {
-            // create bidirectional transport
-            let sendTransport = device.createSendTransport(jsonClone(initParams.data.init.sendTransportOptions));
-            sendTransport.on('connect', ({ dtlsParameters }, success) => {
-                // this callback is called on first consume/produce to link transport to relay
-                client.mutate({
-                    mutation: gql`
-                        mutation($dtlsParameters: DtlsParameters!){
-                            connectSendTransport(dtlsParameters: $dtlsParameters) 
-                        }
-                        `,
-                    variables: {
-                        dtlsParameters: dtlsParameters
-                    }
-                }).then(response => {
-                    console.log(role, "connected send transport", response.data);
-                    success();
-                })
             });
-            let recvTransport = device.createRecvTransport(jsonClone(initParams.data.init.recvTransportOptions));
-            recvTransport.on('connect', ({ dtlsParameters }, success) => {
-                // this callback is called on first consume/produce to link transport to relay
-                client.mutate({
+
+            async function createWebrtcTransport() {
+                return (await client.mutate({
                     mutation: gql`
-                        mutation($dtlsParameters: DtlsParameters!){
-                            connectRecvTransport(dtlsParameters: $dtlsParameters) 
+                mutation {
+                    createWebrtcTransport
+                }
+                `
+                })).data.createWebrtcTransport;
+            }
+
+            // create bidirectional transport
+            let sendTransportOptions = await createWebrtcTransport();
+            let recvTransportOptions = await createWebrtcTransport();
+            console.log(role, "received transport options", sendTransportOptions, recvTransportOptions);
+
+            async function connectWebrtcTransport(transportId: string, dtlsParameters: DtlsParameters) {
+                // this callback is called on first consume/produce to link transport to relay
+                await client.mutate({
+                    mutation: gql`
+                        mutation($transportId: TransportId!, $dtlsParameters: DtlsParameters!){
+                            connectWebrtcTransport(transportId: $transportId, dtlsParameters: $dtlsParameters) 
                         }
                         `,
                     variables: {
-                        dtlsParameters: dtlsParameters
+                        transportId,
+                        dtlsParameters
                     }
-                }).then(response => {
-                    console.log(role, "connected recv transport", response.data);
-                    success();
                 })
+            }
+            let sendTransport = device.createSendTransport(jsonClone(sendTransportOptions));
+            sendTransport.on('connect', async ({ dtlsParameters }, success) => {
+                // this callback is called on first consume/produce to link transport to relay
+                await connectWebrtcTransport(sendTransport.id, dtlsParameters);
+                console.log(role, "connected send transport");
+                success();
+            });
+            let recvTransport = device.createRecvTransport(jsonClone(recvTransportOptions));
+            recvTransport.on('connect', async ({ dtlsParameters }, success) => {
+                // this callback is called on first consume/produce to link transport to relay
+                await connectWebrtcTransport(recvTransport.id, dtlsParameters);
+                console.log(role, "connected recv transport");
+                success();
             });
             return { sendTransport, recvTransport }
         });
@@ -317,11 +317,12 @@ async function session(role: Role, token: string) {
                     // this callback is called on produceData to request connection from relay
                     client.mutate({
                         mutation: gql`
-                        mutation($sctpStreamParameters: SctpStreamParameters!){
-                            produceData(sctpStreamParameters: $sctpStreamParameters) 
+                        mutation($transportId: TransportId!, $sctpStreamParameters: SctpStreamParameters!){
+                            produceData(transportId: $transportId, sctpStreamParameters: $sctpStreamParameters) 
                         }
                         `,
                         variables: {
+                            transportId: sendTransport.id,
                             sctpStreamParameters
                         }
                     }).then(response => {
@@ -348,11 +349,12 @@ async function session(role: Role, token: string) {
                     // request consumerOptions for new producer from relay
                     client.mutate({
                         mutation: gql`
-                        mutation($producerId: ProducerId!){
-                            consume(producerId: $producerId) 
+                        mutation($transportId: TransportId!, $producerId: ProducerId!){
+                            consume(transportId: $transportId, producerId: $producerId) 
                         }
                         `,
                         variables: {
+                            transportId: recvTransport.id,
                             producerId: result.data?.producerAvailable
                         }
                     }).then(async response => {
@@ -413,11 +415,12 @@ async function session(role: Role, token: string) {
                     // this callback is called when produce is called to request connection from relay
                     client.mutate({
                         mutation: gql`
-                        mutation($kind: MediaKind!, $rtpParameters: RtpParameters!){
-                            produce(kind: $kind, rtpParameters: $rtpParameters) 
+                        mutation($transportId: TransportId!, $kind: MediaKind!, $rtpParameters: RtpParameters!){
+                            produce(transportId: $transportId, kind: $kind, rtpParameters: $rtpParameters) 
                         }
                         `,
                         variables: {
+                            transportId: sendTransport.id,
                             kind: kind,
                             rtpParameters: rtpParameters
                         }
@@ -480,11 +483,12 @@ async function session(role: Role, token: string) {
                     // request dataConsumerOptions from relay
                     client.mutate({
                         mutation: gql`
-                        mutation($dataProducerId: DataProducerId!){
-                            consumeData(dataProducerId: $dataProducerId) 
+                        mutation($transportId: TransportId!, $dataProducerId: DataProducerId!){
+                            consumeData(transportId: $transportId, dataProducerId: $dataProducerId) 
                         }
                         `,
                         variables: {
+                            transportId: recvTransport.id,
                             dataProducerId: result.data?.dataProducerAvailable
                         }
                     }).then(async response => {

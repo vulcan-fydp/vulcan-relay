@@ -4,19 +4,21 @@ use uuid::Uuid;
 
 use anyhow::{anyhow, Result};
 use derive_more::Display;
-use mediasoup::consumer::{Consumer, ConsumerId, ConsumerOptions};
-use mediasoup::data_consumer::{DataConsumer, DataConsumerId, DataConsumerOptions};
-use mediasoup::data_producer::{DataProducer, DataProducerId, DataProducerOptions};
-use mediasoup::data_structures::DtlsParameters;
-use mediasoup::producer::{Producer, ProducerId, ProducerOptions};
-use mediasoup::rtp_parameters::RtpCapabilities;
-use mediasoup::rtp_parameters::{MediaKind, RtpParameters};
-use mediasoup::sctp_parameters::SctpStreamParameters;
-use mediasoup::transport::{Transport, TransportId};
-use mediasoup::webrtc_transport::{
-    WebRtcTransport, WebRtcTransportOptions, WebRtcTransportRemoteParameters,
+use mediasoup::{
+    consumer::{Consumer, ConsumerId, ConsumerOptions},
+    data_consumer::{DataConsumer, DataConsumerId, DataConsumerOptions},
+    data_producer::{DataProducer, DataProducerId, DataProducerOptions},
+    data_structures::{DtlsParameters, TransportListenIp},
+    plain_transport::{PlainTransport, PlainTransportOptions},
+    producer::{Producer, ProducerId, ProducerOptions},
+    rtp_parameters::{MediaKind, RtpCapabilities, RtpParameters},
+    sctp_parameters::SctpStreamParameters,
+    transport::{Transport, TransportId},
+    webrtc_transport::{
+        TransportListenIps, WebRtcTransport, WebRtcTransportOptions,
+        WebRtcTransportRemoteParameters,
+    },
 };
-use tokio::sync::OnceCell;
 
 use crate::room::Room;
 
@@ -42,10 +44,9 @@ struct Shared {
     state: Mutex<State>,
 
     id: SessionId,
-    transport_options: WebRtcTransportOptions,
     room: Room,
-    send_transport: OnceCell<WebRtcTransport>, // client -> server
-    recv_transport: OnceCell<WebRtcTransport>, // server -> client
+
+    transport_listen_ip: TransportListenIp,
 }
 impl PartialEq for Shared {
     fn eq(&self, other: &Self) -> bool {
@@ -60,13 +61,15 @@ struct State {
     producers: HashMap<ProducerId, Producer>,
     data_consumers: HashMap<DataConsumerId, DataConsumer>,
     data_producers: HashMap<DataProducerId, DataProducer>,
+    webrtc_transports: HashMap<TransportId, WebRtcTransport>,
+    recv_plain_transports: HashMap<TransportId, PlainTransport>,
 }
 
 impl Session {
-    pub fn new(room: Room, transport_options: WebRtcTransportOptions) -> Self {
+    pub fn new(room: Room, transport_listen_ip: TransportListenIp) -> Self {
         let id = SessionId::new();
-        log::debug!("created new session {}", id);
-        Self {
+        log::debug!("+session {}", id);
+        let session = Self {
             shared: Arc::new(Shared {
                 state: Mutex::new(State {
                     client_rtp_capabilities: None,
@@ -74,56 +77,45 @@ impl Session {
                     producers: HashMap::new(),
                     data_consumers: HashMap::new(),
                     data_producers: HashMap::new(),
+                    webrtc_transports: HashMap::new(),
+                    recv_plain_transports: HashMap::new(),
                 }),
                 id,
-                transport_options,
-                room,
-                send_transport: OnceCell::new(),
-                recv_transport: OnceCell::new(),
+                room: room.clone(),
+                transport_listen_ip,
             }),
-        }
+        };
+        room.add_session(session.clone());
+        session
     }
 
-    /// Connect the local send transport with remote.
-    pub async fn connect_send_transport(
+    /// Connect a local WebRTC transport with the remote transport.
+    pub async fn connect_webrtc_transport(
         &self,
+        id: TransportId,
         dtls_parameters: DtlsParameters,
     ) -> Result<TransportId> {
-        self.connect_transport(self.get_send_transport().await, dtls_parameters)
-            .await
-    }
-    /// Connect the local receive transport with remote.
-    pub async fn connect_recv_transport(
-        &self,
-        dtls_parameters: DtlsParameters,
-    ) -> Result<TransportId> {
-        self.connect_transport(self.get_recv_transport().await, dtls_parameters)
-            .await
-    }
-    /// Connect a local transport with remote.
-    async fn connect_transport(
-        &self,
-        transport: WebRtcTransport,
-        dtls_parameters: DtlsParameters,
-    ) -> Result<TransportId> {
+        let transport = self
+            .get_webrtc_transport(id)
+            .ok_or_else(|| anyhow!("transport does not exist"))?;
+
         transport
             .connect(WebRtcTransportRemoteParameters { dtls_parameters })
             .await?;
-        log::debug!(
-            "connected transport {} from session {}",
-            transport.id(),
-            self.id()
-        );
+        log::debug!("+transport {} (session {})", transport.id(), self.id());
         Ok(transport.id())
     }
 
-    /// Create a local consumer.
+    /// Create a local consumer on the receive WebRTC transport.
     pub async fn consume(
         &self,
         local_pool: tokio_local::LocalPoolHandle,
+        transport_id: TransportId,
         producer_id: ProducerId,
     ) -> Result<Consumer> {
-        let transport = self.get_recv_transport().await;
+        let transport = self
+            .get_webrtc_transport(transport_id)
+            .ok_or_else(|| anyhow!("transport does not exist"))?;
         // make sure client has provided rtp caps
         let rtp_capabilities = self
             .get_rtp_capabilities()
@@ -138,11 +130,7 @@ impl Session {
             .await
             .unwrap()?;
 
-        log::debug!(
-            "new consumer created {} for session {}",
-            consumer.id(),
-            self.id()
-        );
+        log::debug!("+consumer {} (session {})", consumer.id(), self.id());
         self.add_consumer(consumer.clone());
         Ok(consumer)
     }
@@ -155,14 +143,17 @@ impl Session {
         }
     }
 
-    /// Create a local producer.
+    /// Create a local producer on the send WebRTC transport.
     pub async fn produce(
         &self,
         local_pool: tokio_local::LocalPoolHandle,
+        transport_id: TransportId,
         kind: MediaKind,
         rtp_parameters: RtpParameters,
     ) -> Result<Producer> {
-        let transport = self.get_send_transport().await;
+        let transport = self
+            .get_webrtc_transport(transport_id)
+            .ok_or_else(|| anyhow!("transport does not exist"))?;
         let producer = local_pool
             .spawn_pinned(move || async move {
                 transport
@@ -171,27 +162,52 @@ impl Session {
             })
             .await
             .unwrap()?;
-
         self.add_producer(producer.clone());
 
-        let room = self.get_room();
-        room.announce_producer(producer.id());
-        log::debug!(
-            "new producer available {} for session {}",
-            producer.id(),
-            self.id()
-        );
+        log::debug!("+producer {} (session {})", producer.id(), self.id());
 
         Ok(producer)
     }
 
-    /// Create a local data consumer.
+    pub async fn produce_plain(
+        &self,
+        local_pool: tokio_local::LocalPoolHandle,
+        transport_id: TransportId,
+        kind: MediaKind,
+        rtp_parameters: RtpParameters,
+    ) -> Result<Producer> {
+        let transport = self
+            .get_recv_plain_transport(transport_id)
+            .ok_or_else(|| anyhow!("plain transport does not exist"))?;
+
+        let producer = local_pool
+            .spawn_pinned(move || async move {
+                transport
+                    .produce(ProducerOptions::new(kind, rtp_parameters))
+                    .await
+            })
+            .await
+            .unwrap()?;
+        self.add_producer(producer.clone());
+
+        log::debug!(
+            "+producer {} [plain] (session {})",
+            producer.id(),
+            self.id()
+        );
+        Ok(producer)
+    }
+
+    /// Create a local data consumer on the receive WebRTC transport.
     pub async fn consume_data(
         &self,
         local_pool: tokio_local::LocalPoolHandle,
+        transport_id: TransportId,
         data_producer_id: DataProducerId,
     ) -> Result<DataConsumer> {
-        let transport = self.get_recv_transport().await;
+        let transport = self
+            .get_webrtc_transport(transport_id)
+            .ok_or_else(|| anyhow!("transport does not exist"))?;
         let options = DataConsumerOptions::new_sctp(data_producer_id);
 
         let data_consumer = local_pool
@@ -200,7 +216,7 @@ impl Session {
             .unwrap()?;
 
         log::debug!(
-            "new data consumer created {} for session {}",
+            "+data consumer {} (session {})",
             data_consumer.id(),
             self.id()
         );
@@ -208,13 +224,16 @@ impl Session {
         Ok(data_consumer)
     }
 
-    /// Create a local data producer.
+    /// Create a local data producer on the send WebRTC transport.
     pub async fn produce_data(
         &self,
         local_pool: tokio_local::LocalPoolHandle,
+        transport_id: TransportId,
         sctp_stream_parameters: SctpStreamParameters,
     ) -> Result<DataProducer> {
-        let transport = self.get_send_transport().await;
+        let transport = self
+            .get_webrtc_transport(transport_id)
+            .ok_or_else(|| anyhow!("transport does not exist"))?;
         let data_producer = local_pool
             .spawn_pinned(move || async move {
                 transport
@@ -229,7 +248,7 @@ impl Session {
         let room = self.get_room();
         room.announce_data_producer(data_producer.id());
         log::debug!(
-            "new data producer available {} for session {}",
+            "+data producer {} (session {})",
             data_producer.id(),
             self.id()
         );
@@ -249,36 +268,52 @@ impl Session {
         }
     }
 
-    pub async fn get_send_transport(&self) -> WebRtcTransport {
-        self.shared
-            .send_transport
-            .get_or_init(|| async {
-                self.shared
-                    .room
-                    .get_router()
-                    .await
-                    .create_webrtc_transport(self.shared.transport_options.clone())
-                    .await
-                    .unwrap()
-            })
+    pub async fn create_webrtc_transport(&self) -> WebRtcTransport {
+        let mut transport_options =
+            WebRtcTransportOptions::new(TransportListenIps::new(self.shared.transport_listen_ip));
+        transport_options.enable_sctp = true; // required for data channel
+        let transport = self
+            .shared
+            .room
+            .get_router()
             .await
-            .clone()
-    }
-    pub async fn get_recv_transport(&self) -> WebRtcTransport {
-        self.shared
-            .recv_transport
-            .get_or_init(|| async {
-                self.shared
-                    .room
-                    .get_router()
-                    .await
-                    .create_webrtc_transport(self.shared.transport_options.clone())
-                    .await
-                    .unwrap()
-            })
+            .create_webrtc_transport(transport_options)
             .await
-            .clone()
+            .unwrap();
+        let mut state = self.shared.state.lock().unwrap();
+        state
+            .webrtc_transports
+            .insert(transport.id(), transport.clone());
+        transport
     }
+    pub fn get_webrtc_transport(&self, id: TransportId) -> Option<WebRtcTransport> {
+        let state = self.shared.state.lock().unwrap();
+        state.webrtc_transports.get(&id).cloned()
+    }
+    pub async fn create_recv_plain_transport(&self) -> PlainTransport {
+        let mut plain_transport_options =
+            PlainTransportOptions::new(self.shared.transport_listen_ip);
+        plain_transport_options.comedia = true;
+        let plain_transport = self
+            .shared
+            .room
+            .get_router()
+            .await
+            .create_plain_transport(plain_transport_options)
+            .await
+            .unwrap();
+
+        let mut state = self.shared.state.lock().unwrap();
+        state
+            .recv_plain_transports
+            .insert(plain_transport.id(), plain_transport.clone());
+        plain_transport
+    }
+    pub fn get_recv_plain_transport(&self, id: TransportId) -> Option<PlainTransport> {
+        let state = self.shared.state.lock().unwrap();
+        state.recv_plain_transports.get(&id).cloned()
+    }
+
     pub fn set_rtp_capabilities(&self, rtp_capabilities: RtpCapabilities) {
         let mut state = self.shared.state.lock().unwrap();
         state.client_rtp_capabilities.replace(rtp_capabilities);
@@ -299,6 +334,7 @@ impl Session {
 
     pub fn add_producer(&self, producer: Producer) {
         let mut state = self.shared.state.lock().unwrap();
+        self.get_room().announce_producer(producer.id());
         state.producers.insert(producer.id(), producer);
     }
     pub fn remove_producer(&self, producer: &Producer) {
@@ -344,7 +380,7 @@ impl WeakSession {
 }
 impl Drop for Shared {
     fn drop(&mut self) {
-        log::debug!("dropped session {}", self.id);
+        log::debug!("-session {}", self.id);
         self.room.remove_session(self.id);
     }
 }

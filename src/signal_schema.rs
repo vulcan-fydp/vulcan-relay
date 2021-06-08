@@ -2,7 +2,7 @@ use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 
 use anyhow::anyhow;
-use async_graphql::{scalar, Context, Object, Result, Schema, SimpleObject, Subscription};
+use async_graphql::{scalar, Context, Object, Result, Schema, Subscription};
 use mediasoup::transport::Transport;
 
 use crate::session::{Session, WeakSession};
@@ -17,30 +17,11 @@ fn session_from_ctx(ctx: &Context<'_>) -> Result<Session, anyhow::Error> {
 pub struct QueryRoot;
 #[Object]
 impl QueryRoot {
-    /// Obtain initialization parameters for client-side mediasoup device.
-    async fn init(&self, ctx: &Context<'_>) -> Result<ServerInitParameters> {
+    /// Server-side WebRTC RTP capabilities for WebRTC negotiation.
+    async fn server_rtp_capabilities(&self, ctx: &Context<'_>) -> Result<RtpCapabilitiesFinalized> {
         let session = session_from_ctx(ctx)?;
-        let room = session.get_room();
-        let send_transport = session.get_send_transport().await;
-        let recv_transport = session.get_recv_transport().await;
-        let router = room.get_router().await;
-        Ok(ServerInitParameters {
-            send_transport_options: TransportOptions {
-                id: send_transport.id(),
-                dtls_parameters: send_transport.dtls_parameters(),
-                sctp_parameters: send_transport.sctp_parameters().unwrap(),
-                ice_candidates: send_transport.ice_candidates().clone(),
-                ice_parameters: send_transport.ice_parameters().clone(),
-            },
-            recv_transport_options: TransportOptions {
-                id: recv_transport.id(),
-                dtls_parameters: recv_transport.dtls_parameters(),
-                sctp_parameters: send_transport.sctp_parameters().unwrap(),
-                ice_candidates: recv_transport.ice_candidates().clone(),
-                ice_parameters: recv_transport.ice_parameters().clone(),
-            },
-            router_rtp_capabilities: RtpCapabilitiesFinalized(router.rtp_capabilities().clone()),
-        })
+        let router = session.get_room().get_router().await;
+        Ok(RtpCapabilitiesFinalized(router.rtp_capabilities().clone()))
     }
 }
 
@@ -48,42 +29,69 @@ impl QueryRoot {
 pub struct MutationRoot;
 #[Object]
 impl MutationRoot {
-    /// Provide initialization parameters for server-side mediasoup device.
-    async fn init(&self, ctx: &Context<'_>, rtp_capabilities: RtpCapabilities) -> Result<bool> {
+    /// Client-side RTP capabilities for WebRTC negotiation.
+    async fn rtp_capabilities(
+        &self,
+        ctx: &Context<'_>,
+        rtp_capabilities: RtpCapabilities,
+    ) -> Result<bool> {
         let session = session_from_ctx(ctx)?;
         session.set_rtp_capabilities(rtp_capabilities.0);
         Ok(true)
     }
 
-    /// Provide connection parameters for server-side transport.
-    async fn connect_send_transport(
+    /// WebRTC transport parameters.
+    async fn create_webrtc_transport(&self, ctx: &Context<'_>) -> Result<WebRtcTransportOptions> {
+        let session = session_from_ctx(ctx)?;
+        let transport = session.create_webrtc_transport().await;
+        Ok(WebRtcTransportOptions {
+            id: transport.id(),
+            dtls_parameters: transport.dtls_parameters(),
+            sctp_parameters: transport.sctp_parameters().unwrap(),
+            ice_candidates: transport.ice_candidates().clone(),
+            ice_parameters: transport.ice_parameters().clone(),
+        })
+    }
+    /// Plain receive transport connection parameters.
+    async fn create_recv_plain_transport(
         &self,
         ctx: &Context<'_>,
-        dtls_parameters: DtlsParameters,
-    ) -> Result<TransportId> {
+    ) -> Result<PlainTransportOptions> {
         let session = session_from_ctx(ctx)?;
-        Ok(TransportId(
-            session.connect_send_transport(dtls_parameters.0).await?,
-        ))
+        let plain_transport = session.create_recv_plain_transport().await;
+        Ok(PlainTransportOptions {
+            id: plain_transport.id(),
+            tuple: plain_transport.tuple(),
+        })
     }
 
-    /// Provide connection parameters for server-side transport.
-    async fn connect_recv_transport(
+    /// Provide connection parameters for server-side WebRTC transport.
+    async fn connect_webrtc_transport(
         &self,
         ctx: &Context<'_>,
+        transport_id: TransportId,
         dtls_parameters: DtlsParameters,
     ) -> Result<TransportId> {
         let session = session_from_ctx(ctx)?;
         Ok(TransportId(
-            session.connect_recv_transport(dtls_parameters.0).await?,
+            session
+                .connect_webrtc_transport(transport_id.0, dtls_parameters.0)
+                .await?,
         ))
     }
 
     /// Request consumption of media stream.
-    async fn consume(&self, ctx: &Context<'_>, producer_id: ProducerId) -> Result<ConsumerOptions> {
+    async fn consume(
+        &self,
+        ctx: &Context<'_>,
+        transport_id: TransportId,
+        producer_id: ProducerId,
+    ) -> Result<ConsumerOptions> {
         let local_pool = ctx.data_unchecked::<tokio_local::LocalPoolHandle>();
         let session = session_from_ctx(ctx)?;
-        let consumer = session.consume(local_pool.clone(), producer_id.0).await?;
+        let consumer = session
+            .consume(local_pool.clone(), transport_id.0, producer_id.0)
+            .await?;
         Ok(ConsumerOptions {
             id: consumer.id(),
             kind: consumer.kind(),
@@ -103,6 +111,7 @@ impl MutationRoot {
     async fn produce(
         &self,
         ctx: &Context<'_>,
+        transport_id: TransportId,
         kind: MediaKind,
         rtp_parameters: RtpParameters,
     ) -> Result<ProducerId> {
@@ -110,7 +119,25 @@ impl MutationRoot {
         let session = session_from_ctx(ctx)?;
         Ok(ProducerId(
             session
-                .produce(local_pool.clone(), kind.0, rtp_parameters.0)
+                .produce(local_pool.clone(), transport_id.0, kind.0, rtp_parameters.0)
+                .await?
+                .id(),
+        ))
+    }
+
+    /// Request production of a media stream on plain transport.
+    async fn produce_plain(
+        &self,
+        ctx: &Context<'_>,
+        transport_id: TransportId,
+        kind: MediaKind,
+        rtp_parameters: RtpParameters,
+    ) -> Result<ProducerId> {
+        let local_pool = ctx.data_unchecked::<tokio_local::LocalPoolHandle>();
+        let session = session_from_ctx(ctx)?;
+        Ok(ProducerId(
+            session
+                .produce_plain(local_pool.clone(), transport_id.0, kind.0, rtp_parameters.0)
                 .await?
                 .id(),
         ))
@@ -120,12 +147,13 @@ impl MutationRoot {
     async fn consume_data(
         &self,
         ctx: &Context<'_>,
+        transport_id: TransportId,
         data_producer_id: DataProducerId,
     ) -> Result<DataConsumerOptions> {
         let local_pool = ctx.data_unchecked::<tokio_local::LocalPoolHandle>();
         let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
         let data_consumer = session
-            .consume_data(local_pool.clone(), data_producer_id.0)
+            .consume_data(local_pool.clone(), transport_id.0, data_producer_id.0)
             .await?;
         Ok(DataConsumerOptions {
             id: data_consumer.id(),
@@ -138,13 +166,14 @@ impl MutationRoot {
     async fn produce_data(
         &self,
         ctx: &Context<'_>,
+        transport_id: TransportId,
         sctp_stream_parameters: SctpStreamParameters,
     ) -> Result<DataProducerId> {
         let local_pool = ctx.data_unchecked::<tokio_local::LocalPoolHandle>();
         let session = session_from_ctx(ctx)?;
         Ok(DataProducerId(
             session
-                .produce_data(local_pool.clone(), sctp_stream_parameters.0)
+                .produce_data(local_pool.clone(), transport_id.0, sctp_stream_parameters.0)
                 .await?
                 .id(),
         ))
@@ -230,25 +259,29 @@ scalar!(RtpCapabilitiesFinalized);
 struct SctpStreamParameters(mediasoup::sctp_parameters::SctpStreamParameters);
 scalar!(SctpStreamParameters);
 
-/// Initialization parameters for a client-side mediasoup device
-#[derive(SimpleObject)]
-struct ServerInitParameters {
-    send_transport_options: TransportOptions,
-    recv_transport_options: TransportOptions,
-    router_rtp_capabilities: RtpCapabilitiesFinalized,
-}
+#[derive(Serialize, Deserialize, Clone)]
+struct TransportTuple(mediasoup::data_structures::TransportTuple);
+scalar!(TransportTuple);
 
 /// Initialization parameters for a transport
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct TransportOptions {
+struct WebRtcTransportOptions {
     id: mediasoup::transport::TransportId,
     dtls_parameters: mediasoup::data_structures::DtlsParameters,
     sctp_parameters: mediasoup::sctp_parameters::SctpParameters,
     ice_candidates: Vec<mediasoup::data_structures::IceCandidate>,
     ice_parameters: mediasoup::data_structures::IceParameters,
 }
-scalar!(TransportOptions);
+scalar!(WebRtcTransportOptions);
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PlainTransportOptions {
+    id: mediasoup::transport::TransportId,
+    tuple: mediasoup::data_structures::TransportTuple,
+}
+scalar!(PlainTransportOptions);
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
