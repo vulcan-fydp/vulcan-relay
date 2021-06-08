@@ -878,6 +878,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "graphql-ws"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "graphql_client",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "tokio-tungstenite 0.14.0",
+]
+
+[[package]]
 name = "graphql_client"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1826,9 +1839,9 @@ dependencies = [
 
 [[package]]
 name = "security-framework"
-version = "2.3.0"
+version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b239a3d5db51252f6f48f42172c65317f37202f4a21021bf5f9d40a408f4592c"
+checksum = "23a2ac85147a3a11d77ecf1bc7166ec0b92febfa4461c37944e180f319ece467"
 dependencies = [
  "bitflags",
  "core-foundation",
@@ -2122,6 +2135,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-native-tls"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7d995660bd2b7f8c1568414c1126076c13fbb725c40112dc0120b78eb9b717b"
+dependencies = [
+ "native-tls",
+ "tokio",
+]
+
+[[package]]
 name = "tokio-rustls"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2155,6 +2178,21 @@ dependencies = [
  "pin-project",
  "tokio",
  "tungstenite 0.12.0",
+]
+
+[[package]]
+name = "tokio-tungstenite"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e96bb520beab540ab664bd5a9cfeaa1fcd846fa68c830b42e2c8963071251d2"
+dependencies = [
+ "futures-util",
+ "log",
+ "native-tls",
+ "pin-project",
+ "tokio",
+ "tokio-native-tls",
+ "tungstenite 0.13.0",
 ]
 
 [[package]]
@@ -2416,6 +2454,7 @@ dependencies = [
  "derive_more",
  "env_logger",
  "futures",
+ "graphql-ws",
  "graphql_client",
  "http",
  "log",
@@ -2427,7 +2466,7 @@ dependencies = [
  "tokio",
  "tokio-local",
  "tokio-stream",
- "tungstenite 0.13.0",
+ "tokio-tungstenite 0.14.0",
  "uuid",
  "warp",
 ]
@@ -2472,7 +2511,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-stream",
- "tokio-tungstenite",
+ "tokio-tungstenite 0.13.0",
  "tokio-util",
  "tower-service",
  "tracing",

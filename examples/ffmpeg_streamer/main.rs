@@ -1,19 +1,20 @@
-use clap::{AppSettings, Clap};
-use http::Uri;
-use mediasoup::rtp_parameters::{MediaKind, MimeTypeVideo};
-use mediasoup::rtp_parameters::{
-    MimeTypeAudio, RtpCodecParameters, RtpCodecParametersParameters, RtpEncodingParameters,
-    RtpParameters,
-};
-use native_tls::TlsConnector;
 use serde::Serialize;
 use std::io::Read;
-use std::net::TcpStream;
 use std::num::{NonZeroU32, NonZeroU8};
 
-use crate::graphql_ws_protocol::GraphQLClient;
+use clap::{AppSettings, Clap};
+use futures::StreamExt;
+use http::Uri;
+use mediasoup::rtp_parameters::{
+    MediaKind, MimeTypeAudio, MimeTypeVideo, RtpCodecParameters, RtpCodecParametersParameters,
+    RtpEncodingParameters, RtpParameters,
+};
+use native_tls::TlsConnector;
+use tokio::net::TcpStream;
+use tokio_tungstenite::Connector;
 
-mod graphql_ws_protocol;
+use graphql_ws::GraphQLWebSocket;
+
 mod signal_schema;
 
 #[derive(Serialize)]
@@ -32,7 +33,8 @@ pub struct Opts {
     pub token: String,
 }
 
-fn main() -> Result<(), anyhow::Error> {
+#[tokio::main]
+async fn main() -> Result<(), anyhow::Error> {
     env_logger::init_from_env(
         env_logger::Env::default()
             .filter_or(env_logger::DEFAULT_FILTER_ENV, "ffmpeg_streamer=debug"),
@@ -49,33 +51,41 @@ fn main() -> Result<(), anyhow::Error> {
 
     let host = uri.host().unwrap();
     let port = uri.port_u16().unwrap();
-    let stream = TcpStream::connect((host, port))?;
-    let tls_stream = connector.connect(host, stream)?;
+    let stream = TcpStream::connect((host, port)).await?;
 
-    let req = tungstenite::handshake::client::Request::builder()
+    let req = http::Request::builder()
         .uri(uri)
         .header("Sec-WebSocket-Protocol", "graphql-ws")
         .body(())?;
-    let (socket, response) = tungstenite::client(req, tls_stream)?;
+    let (socket, response) = tokio_tungstenite::client_async_tls_with_config(
+        req,
+        stream,
+        None,
+        Some(Connector::NativeTls(connector)),
+    )
+    .await?;
 
     log::info!("response http {}:", response.status());
     for (ref header, value) in response.headers() {
         log::debug!("- {}={:?}", header, value);
     }
 
-    let mut client = GraphQLClient::new(
+    let mut client = GraphQLWebSocket::new();
+    client.connect(
         socket,
         Some(serde_json::to_value(SessionToken { token: opts.token })?),
     );
     let audio_transport_options = client
-        .query::<signal_schema::CreateRecvPlainTransport>(
+        .query_unchecked::<signal_schema::CreateRecvPlainTransport>(
             signal_schema::create_recv_plain_transport::Variables,
         )
+        .await
         .create_recv_plain_transport;
     let video_transport_options = client
-        .query::<signal_schema::CreateRecvPlainTransport>(
+        .query_unchecked::<signal_schema::CreateRecvPlainTransport>(
             signal_schema::create_recv_plain_transport::Variables,
         )
+        .await
         .create_recv_plain_transport;
 
     let audio_transport_id = audio_transport_options.id;
@@ -90,7 +100,7 @@ fn main() -> Result<(), anyhow::Error> {
         video_transport_options
     );
     let audio_producer_id = client
-        .query::<signal_schema::ProducePlain>(signal_schema::produce_plain::Variables {
+        .query_unchecked::<signal_schema::ProducePlain>(signal_schema::produce_plain::Variables {
             transport_id: audio_transport_id,
             kind: MediaKind::Audio,
             rtp_parameters: RtpParameters {
@@ -109,11 +119,12 @@ fn main() -> Result<(), anyhow::Error> {
                 ..RtpParameters::default()
             },
         })
+        .await
         .produce_plain;
     log::debug!("audio producer: {:?}", audio_producer_id);
 
     let video_producer_id = client
-        .query::<signal_schema::ProducePlain>(signal_schema::produce_plain::Variables {
+        .query_unchecked::<signal_schema::ProducePlain>(signal_schema::produce_plain::Variables {
             transport_id: video_transport_id,
             kind: MediaKind::Video,
             rtp_parameters: RtpParameters {
@@ -131,8 +142,22 @@ fn main() -> Result<(), anyhow::Error> {
                 ..RtpParameters::default()
             },
         })
+        .await
         .produce_plain;
     log::debug!("video producer: {:?}", video_producer_id);
+
+    let data_producer_available = client.subscribe::<signal_schema::DataProducerAvailable>(
+        signal_schema::data_producer_available::Variables,
+    );
+    let mut data_producer_available_stream = data_producer_available.execute();
+    tokio::spawn(async move {
+        while let Some(Ok(response)) = data_producer_available_stream.next().await {
+            log::debug!(
+                "data producer available: {}",
+                response.data.unwrap().data_producer_available
+            )
+        }
+    });
 
     println!("Press Enter to end session...");
     let _ = std::io::stdin().read(&mut [0u8]).unwrap();
