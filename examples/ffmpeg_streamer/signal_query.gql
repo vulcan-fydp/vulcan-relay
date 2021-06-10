@@ -2,8 +2,8 @@ subscription DataProducerAvailable {
     dataProducerAvailable
 }
 
-mutation CreateRecvPlainTransport {
-    createRecvPlainTransport
+mutation CreatePlainTransport {
+    createPlainTransport
 }
 
 mutation ProducePlain($transportId: TransportId!, $kind: MediaKind!, $rtpParameters: RtpParameters!) {

@@ -102,7 +102,7 @@ impl Session {
         transport
             .connect(WebRtcTransportRemoteParameters { dtls_parameters })
             .await?;
-        log::debug!("+transport {} (session {})", transport.id(), self.id());
+        log::debug!("<-> transport {} (session {})", transport.id(), self.id());
         Ok(transport.id())
     }
 
@@ -284,13 +284,14 @@ impl Session {
         state
             .webrtc_transports
             .insert(transport.id(), transport.clone());
+        log::debug!("+transport {} (session {})", transport.id(), self.id());
         transport
     }
     pub fn get_webrtc_transport(&self, id: TransportId) -> Option<WebRtcTransport> {
         let state = self.shared.state.lock().unwrap();
         state.webrtc_transports.get(&id).cloned()
     }
-    pub async fn create_recv_plain_transport(&self) -> PlainTransport {
+    pub async fn create_plain_transport(&self) -> PlainTransport {
         let mut plain_transport_options =
             PlainTransportOptions::new(self.shared.transport_listen_ip);
         plain_transport_options.comedia = true;
@@ -307,6 +308,11 @@ impl Session {
         state
             .recv_plain_transports
             .insert(plain_transport.id(), plain_transport.clone());
+        log::debug!(
+            "+transport {} [plain] (session {})",
+            plain_transport.id(),
+            self.id()
+        );
         plain_transport
     }
     pub fn get_recv_plain_transport(&self, id: TransportId) -> Option<PlainTransport> {

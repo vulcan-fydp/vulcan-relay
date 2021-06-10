@@ -53,12 +53,9 @@ impl MutationRoot {
         })
     }
     /// Plain receive transport connection parameters.
-    async fn create_recv_plain_transport(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<PlainTransportOptions> {
+    async fn create_plain_transport(&self, ctx: &Context<'_>) -> Result<PlainTransportOptions> {
         let session = session_from_ctx(ctx)?;
-        let plain_transport = session.create_recv_plain_transport().await;
+        let plain_transport = session.create_plain_transport().await;
         Ok(PlainTransportOptions {
             id: plain_transport.id(),
             tuple: plain_transport.tuple(),

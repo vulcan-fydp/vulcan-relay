@@ -76,17 +76,17 @@ async fn main() -> Result<(), anyhow::Error> {
         Some(serde_json::to_value(SessionToken { token: opts.token })?),
     );
     let audio_transport_options = client
-        .query_unchecked::<signal_schema::CreateRecvPlainTransport>(
-            signal_schema::create_recv_plain_transport::Variables,
+        .query_unchecked::<signal_schema::CreatePlainTransport>(
+            signal_schema::create_plain_transport::Variables,
         )
         .await
-        .create_recv_plain_transport;
+        .create_plain_transport;
     let video_transport_options = client
-        .query_unchecked::<signal_schema::CreateRecvPlainTransport>(
-            signal_schema::create_recv_plain_transport::Variables,
+        .query_unchecked::<signal_schema::CreatePlainTransport>(
+            signal_schema::create_plain_transport::Variables,
         )
         .await
-        .create_recv_plain_transport;
+        .create_plain_transport;
 
     let audio_transport_id = audio_transport_options.id;
     let video_transport_id = video_transport_options.id;

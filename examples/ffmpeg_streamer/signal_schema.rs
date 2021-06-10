@@ -18,7 +18,7 @@ pub struct DataProducerAvailable;
     schema_path = "examples/ffmpeg_streamer/signal_schema.gql",
     query_path = "examples/ffmpeg_streamer/signal_query.gql"
 )]
-pub struct CreateRecvPlainTransport;
+pub struct CreatePlainTransport;
 
 #[derive(GraphQLQuery)]
 #[graphql(

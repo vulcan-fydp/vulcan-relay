@@ -17,7 +17,7 @@ type MutationRoot {
 	"""
 	Plain receive transport connection parameters.
 	"""
-	createRecvPlainTransport: PlainTransportOptions!
+	createPlainTransport: PlainTransportOptions!
 	"""
 	Provide connection parameters for server-side WebRTC transport.
 	"""
