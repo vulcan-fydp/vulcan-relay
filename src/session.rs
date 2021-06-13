@@ -62,7 +62,7 @@ struct State {
     data_consumers: HashMap<DataConsumerId, DataConsumer>,
     data_producers: HashMap<DataProducerId, DataProducer>,
     webrtc_transports: HashMap<TransportId, WebRtcTransport>,
-    recv_plain_transports: HashMap<TransportId, PlainTransport>,
+    plain_transports: HashMap<TransportId, PlainTransport>,
 }
 
 impl Session {
@@ -78,7 +78,7 @@ impl Session {
                     data_consumers: HashMap::new(),
                     data_producers: HashMap::new(),
                     webrtc_transports: HashMap::new(),
-                    recv_plain_transports: HashMap::new(),
+                    plain_transports: HashMap::new(),
                 }),
                 id,
                 room: room.clone(),
@@ -177,7 +177,7 @@ impl Session {
         rtp_parameters: RtpParameters,
     ) -> Result<Producer> {
         let transport = self
-            .get_recv_plain_transport(transport_id)
+            .get_plain_transport(transport_id)
             .ok_or_else(|| anyhow!("plain transport does not exist"))?;
 
         let producer = local_pool
@@ -306,7 +306,7 @@ impl Session {
 
         let mut state = self.shared.state.lock().unwrap();
         state
-            .recv_plain_transports
+            .plain_transports
             .insert(plain_transport.id(), plain_transport.clone());
         log::debug!(
             "+transport {} [plain] (session {})",
@@ -315,9 +315,9 @@ impl Session {
         );
         plain_transport
     }
-    pub fn get_recv_plain_transport(&self, id: TransportId) -> Option<PlainTransport> {
+    pub fn get_plain_transport(&self, id: TransportId) -> Option<PlainTransport> {
         let state = self.shared.state.lock().unwrap();
-        state.recv_plain_transports.get(&id).cloned()
+        state.plain_transports.get(&id).cloned()
     }
 
     pub fn set_rtp_capabilities(&self, rtp_capabilities: RtpCapabilities) {

@@ -40,10 +40,10 @@ built = "0.5"
 
 [dev-dependencies]
 graphql_client = "0.9"
-graphql-ws = { path = "third-party/graphql-ws" }
+graphql-ws = { git = "https://github.com/Netdex/graphql-ws" }
 tokio-tungstenite = { version = "0.14", features = ["native-tls"] }
 native-tls = "0.2"
 http = "0.2"
 
 [workspace]
-members = ["third-party/tokio-local", "third-party/graphql-ws"]
+members = ["third-party/tokio-local"]
