@@ -104,8 +104,6 @@ impl Room {
         log::trace!("<-> session {} (room {})", session.id(), self.id());
     }
     
-    /// AYUSH TODO -- fire off "event" for client removal
-    /// this is called when every time a session (client) leaves to a room
     /// Remove a session from this room.
     pub fn remove_session(&self, session_id: SessionId) {
         let mut state = self.shared.state.lock().unwrap();
