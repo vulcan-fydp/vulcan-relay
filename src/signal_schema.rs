@@ -2,7 +2,9 @@ use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 
 use anyhow::anyhow;
-use async_graphql::{guard::Guard, scalar, Context, Object, Result, Schema, Subscription, Enum, SimpleObject, ID};
+use async_graphql::{
+    guard::Guard, scalar, Context, Enum, Object, Result, Schema, SimpleObject, Subscription, ID,
+};
 use mediasoup::transport::Transport;
 
 use crate::session::{Resource, Session, WeakSession};
@@ -367,7 +369,10 @@ struct DataConsumerOptions {
 scalar!(DataConsumerOptions);
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq)]
-pub enum ClientUpdate {Leave, Join}
+pub enum ClientUpdate {
+    Leave,
+    Join,
+}
 
 impl From<crate::room::ClientUpdate> for ClientUpdate {
     fn from(update: crate::room::ClientUpdate) -> Self {
@@ -382,11 +387,15 @@ impl From<crate::room::ClientUpdate> for ClientUpdate {
 struct ClientStateUpdate {
     update: ClientUpdate,
     name: String,
-    session_id: ID
+    session_id: ID,
 }
 
 impl From<crate::room::ClientStateUpdate> for ClientStateUpdate {
     fn from(update: crate::room::ClientStateUpdate) -> Self {
-        ClientStateUpdate { update: update.update.into(), name: update.name, session_id: update.session_id.into() }
+        ClientStateUpdate {
+            update: update.update.into(),
+            name: update.name,
+            session_id: update.session_id.into(),
+        }
     }
 }
