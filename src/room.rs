@@ -32,6 +32,16 @@ pub struct WeakRoom {
     shared: Weak<Shared>,
 }
 
+#[derive(Clone)]
+pub enum ClientUpdate {Leave, Join}
+
+#[derive(Clone)]
+pub struct ClientStateUpdate {
+    pub update: ClientUpdate,
+    pub name: String,
+    pub session_id: SessionId
+}
+
 struct Shared {
     state: Mutex<State>,
 
@@ -42,6 +52,7 @@ struct Shared {
     router: OnceCell<Router>,
     producer_available_tx: broadcast::Sender<ProducerId>,
     data_producer_available_tx: broadcast::Sender<DataProducerId>,
+    client_state_update_tx : broadcast::Sender<ClientStateUpdate>,
 }
 
 struct State {
@@ -63,6 +74,7 @@ impl Room {
                 router: OnceCell::new(),
                 producer_available_tx: broadcast::channel(16).0,
                 data_producer_available_tx: broadcast::channel(16).0,
+                client_state_update_tx: broadcast::channel(16).0,
             }),
         }
     }
@@ -85,13 +97,18 @@ impl Room {
     /// Add a session to this room.
     pub fn add_session(&self, session: Session) {
         let mut state = self.shared.state.lock().unwrap();
-        state.sessions.insert(session.id(), session.downgrade());
+        let session_id = session.id();
+        let _ = self.shared.client_state_update_tx.send(ClientStateUpdate{update: ClientUpdate::Join, name: "CALLUM MOSELELY".to_owned(), session_id});
+        state.sessions.insert(session_id, session.downgrade());
         log::debug!("<-> session {} (room {})", session.id(), self.id());
     }
-
-    /// Remvoe a session from this room.
+    
+    /// AYUSH TODO -- fire off "event" for client removal
+    /// this is called when every time a session (client) leaves to a room
+    /// Remove a session from this room.
     pub fn remove_session(&self, session_id: SessionId) {
         let mut state = self.shared.state.lock().unwrap();
+        let _ = self.shared.client_state_update_tx.send(ClientStateUpdate{update: ClientUpdate::Leave, name: "CALLUM MOSELELY".to_owned(), session_id});
         state.sessions.remove(&session_id).unwrap();
         log::debug!("</> session {} (room {})", session_id, self.id());
     }
@@ -139,6 +156,21 @@ impl Room {
             stream::iter(data_producers),
             BroadcastStream::new(self.shared.data_producer_available_tx.subscribe())
                 .map(|x| x.unwrap()),
+        )
+    }
+
+    /// Get a stream which yields existing and new client state updates.
+    pub fn client_state_updates(&self) -> impl Stream<Item = ClientStateUpdate> {
+        let state = self.shared.state.lock().unwrap();
+        let clients = state
+            .sessions
+            .values()
+            .filter_map(|weak_session| weak_session.upgrade()) // ignore dropped sessions
+            .map(|session| ClientStateUpdate{update: ClientUpdate::Join, name: "CALLUM MOESLELY".to_owned(), session_id : session.id()})
+            .collect::<Vec<ClientStateUpdate>>();
+        stream::select(
+            stream::iter(clients),
+            BroadcastStream::new(self.shared.client_state_update_tx.subscribe()).map(|x| x.unwrap()),
         )
     }
 
