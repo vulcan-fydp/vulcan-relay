@@ -245,18 +245,22 @@ struct RtpParameters(mediasoup::rtp_parameters::RtpParameters);
 scalar!(RtpParameters);
 
 #[derive(Serialize, Deserialize, Clone)]
+#[serde(transparent)]
 struct RtpCapabilities(mediasoup::rtp_parameters::RtpCapabilities);
 scalar!(RtpCapabilities);
 
 #[derive(Serialize, Deserialize, Clone)]
+#[serde(transparent)]
 struct RtpCapabilitiesFinalized(mediasoup::rtp_parameters::RtpCapabilitiesFinalized);
 scalar!(RtpCapabilitiesFinalized);
 
 #[derive(Serialize, Deserialize, Clone)]
+#[serde(transparent)]
 struct SctpStreamParameters(mediasoup::sctp_parameters::SctpStreamParameters);
 scalar!(SctpStreamParameters);
 
 #[derive(Serialize, Deserialize, Clone)]
+#[serde(transparent)]
 struct TransportTuple(mediasoup::data_structures::TransportTuple);
 scalar!(TransportTuple);
 
