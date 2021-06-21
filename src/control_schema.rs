@@ -95,6 +95,28 @@ impl MutationRoot {
             Err(err) => err.into(),
         }
     }
+    /// Register a host session attached to a specific room, identifed by its room ID.
+    /// The session and corresponding token remains valid until unregistered.
+    /// Hosts can present the returned token to connect to the Relay,
+    /// which will automatically place them in the correct room.
+    async fn register_host_session(
+        &self,
+        ctx: &Context<'_>,
+        room_id: ID,
+        session_id: ID,
+    ) -> RegisterSessionResult {
+        let relay_server = ctx.data_unchecked::<RelayServer>();
+        match relay_server.register_session(
+            ForeignSessionId(session_id.clone().into()),
+            SessionOptions::Host(ForeignRoomId(room_id.into())),
+        ) {
+            Ok(session_token) => RegisterSessionResult::Ok(SessionWithToken {
+                id: session_id,
+                access_token: session_token.into(),
+            }),
+            Err(err) => err.into(),
+        }
+    }
     /// Unregister a session by its session ID.
     /// This will also terminate all active connections made with this session.
     async fn unregister_session(

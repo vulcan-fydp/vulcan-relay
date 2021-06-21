@@ -20,6 +20,7 @@ use mediasoup::{
     },
 };
 
+use crate::relay_server::SessionOptions;
 use crate::room::Room;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Display, Hash, Default)]
@@ -46,6 +47,7 @@ struct Shared {
     id: SessionId,
     room: Room,
 
+    session_options: SessionOptions,
     transport_listen_ip: TransportListenIp,
 }
 impl PartialEq for Shared {
@@ -66,7 +68,11 @@ struct State {
 }
 
 impl Session {
-    pub fn new(room: Room, transport_listen_ip: TransportListenIp) -> Self {
+    pub fn new(
+        room: Room,
+        session_options: SessionOptions,
+        transport_listen_ip: TransportListenIp,
+    ) -> Self {
         let id = SessionId::new();
         log::debug!("+session {}", id);
         let session = Self {
@@ -82,6 +88,7 @@ impl Session {
                 }),
                 id,
                 room: room.clone(),
+                session_options,
                 transport_listen_ip,
             }),
         };
@@ -258,6 +265,9 @@ impl Session {
 
     pub fn id(&self) -> SessionId {
         self.shared.id
+    }
+    pub fn get_session_options(&self) -> SessionOptions {
+        self.shared.session_options.clone()
     }
     pub fn get_room(&self) -> Room {
         self.shared.room.clone()
