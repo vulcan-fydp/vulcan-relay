@@ -5,7 +5,8 @@ Tool for streaming directly to a Relay from FFmpeg.
 ```
 cargo run --example ffmpeg_streamer --signal-addr <addr> --token <token>
 ```
-- `--signal-addr` is the address of the Relay signalling endpoint (e.g. `wss://192.168.140.128:8443`)
+- `--signal-addr` is the address of the Relay signalling endpoint (e.g. `wss://localhost:8443`)
+  - **DO NOT** use an IP address, you must use a hostname (or you will get TLS errors)
 - `--token` is an access token issued by the Relay after registering a session
 
 Leave the program open and record the tuples for audio/video plain transport options. Example:
