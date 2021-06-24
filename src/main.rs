@@ -15,10 +15,7 @@ use mediasoup::{
     worker::WorkerSettings,
     worker_manager::WorkerManager,
 };
-use warp::{
-    http::{Response as HttpResponse, StatusCode},
-    Filter, Rejection, Reply,
-};
+use warp::{http::Response as HttpResponse, Filter};
 
 use vulcan_relay::built_info;
 use vulcan_relay::{
@@ -138,21 +135,16 @@ async fn main() {
             .body(playground_source(GraphQLPlaygroundConfig::new("/")))
     });
 
-    let signal_routes = graphql_signal_ws.recover(gql_rejection);
-    let control_routes = graphql_playground
-        .or(graphql_control_post)
-        .recover(gql_rejection);
+    let signal_routes = graphql_signal_ws;
+    let control_routes = graphql_playground.or(graphql_control_post);
 
     let signal_addr = opts.signal_addr.parse::<SocketAddr>().unwrap();
     let control_addr = opts.control_addr.parse::<SocketAddr>().unwrap();
-    log::info!("signal graphql endpoint: wss://{}", signal_addr);
 
-    let signal_server = warp::serve(signal_routes.with(warp::log("signal-server")))
-        .tls()
-        .cert_path(opts.cert_path.clone())
-        .key_path(opts.key_path.clone());
-    if opts.control_no_tls {
+    if opts.no_tls {
+        log::info!("signal graphql endpoint: ws://{}", signal_addr);
         log::info!("control endpoint: http://{}", control_addr);
+        let signal_server = warp::serve(signal_routes.with(warp::log("signal-server")));
         let control_server = warp::serve(control_routes.with(warp::log("control-server")));
         future::join(
             signal_server.run(signal_addr),
@@ -160,7 +152,12 @@ async fn main() {
         )
         .await;
     } else {
+        log::info!("signal graphql endpoint: wss://{}", signal_addr);
         log::info!("control graphql endpoint: https://{}", control_addr);
+        let signal_server = warp::serve(signal_routes.with(warp::log("signal-server")))
+            .tls()
+            .cert_path(opts.cert_path.clone())
+            .key_path(opts.key_path.clone());
         let control_server = warp::serve(control_routes.with(warp::log("control-server")))
             .tls()
             .cert_path(opts.cert_path)
@@ -200,39 +197,4 @@ fn media_codecs() -> Vec<RtpCodecCapability> {
             ],
         },
     ]
-}
-
-/// Warp rejection handler for GraphQL responses.
-async fn gql_rejection(rej: Rejection) -> Result<impl Reply, Infallible> {
-    if rej.is_not_found() {
-        Ok(warp::reply::with_status(
-            "NOT_FOUND".to_string(),
-            StatusCode::NOT_FOUND,
-        ))
-    } else if let Some(err) = rej.find::<warp::filters::body::BodyDeserializeError>() {
-        Ok(warp::reply::with_status(
-            err.to_string(),
-            StatusCode::BAD_REQUEST,
-        ))
-    } else if let Some(err) = rej.find::<warp::reject::MethodNotAllowed>() {
-        Ok(warp::reply::with_status(
-            err.to_string(),
-            StatusCode::METHOD_NOT_ALLOWED,
-        ))
-    } else if let Some(err) = rej.find::<async_graphql_warp::BadRequest>() {
-        Ok(warp::reply::with_status(
-            err.to_string(),
-            StatusCode::BAD_REQUEST,
-        ))
-    } else if let Some(err) = rej.find::<warp::reject::InvalidHeader>() {
-        Ok(warp::reply::with_status(
-            err.to_string(),
-            StatusCode::BAD_REQUEST,
-        ))
-    } else {
-        Ok(warp::reply::with_status(
-            "INTERNAL_SERVER_ERROR".to_string(),
-            StatusCode::INTERNAL_SERVER_ERROR,
-        ))
-    }
 }

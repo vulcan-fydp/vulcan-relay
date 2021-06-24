@@ -23,7 +23,7 @@ pub struct Opts {
     /// Announce address for RTC protocols.
     #[clap(long)]
     pub rtc_announce_ip: Option<String>,
-    /// Disable TLS for control endpoint only.
+    /// Disable TLS for all endpoints.
     #[clap(long)]
-    pub control_no_tls: bool,
+    pub no_tls: bool,
 }
