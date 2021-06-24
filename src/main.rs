@@ -20,17 +20,26 @@ use warp::{
     Filter, Rejection, Reply,
 };
 
+use vulcan_relay::built_info;
 use vulcan_relay::{
     cmdline::Opts,
     control_schema::{self, ControlSchema},
     relay_server::{RelayServer, SessionToken},
-    signal_schema::{self},
+    signal_schema,
 };
 
 #[tokio::main]
 async fn main() {
     env_logger::init_from_env(
-        env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "vulcan_relay=debug"),
+        env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "vulcan_relay=trace"),
+    );
+
+    log::info!(
+        "{} {} {} {}",
+        built_info::PKG_NAME,
+        built_info::PKG_VERSION,
+        built_info::TARGET,
+        built_info::PROFILE
     );
 
     let opts: Opts = Opts::parse();
@@ -133,19 +142,35 @@ async fn main() {
     let control_routes = graphql_playground
         .or(graphql_control_post)
         .recover(gql_rejection);
-    future::join(
-        warp::serve(signal_routes.with(warp::log("signal-server")))
-            .tls()
-            .cert_path(opts.cert_path.clone())
-            .key_path(opts.key_path.clone())
-            .run(opts.signal_addr.parse::<SocketAddr>().unwrap()),
-        warp::serve(control_routes.with(warp::log("control-server")))
+
+    let signal_addr = opts.signal_addr.parse::<SocketAddr>().unwrap();
+    let control_addr = opts.control_addr.parse::<SocketAddr>().unwrap();
+    log::info!("signal graphql endpoint: wss://{}", signal_addr);
+
+    let signal_server = warp::serve(signal_routes.with(warp::log("signal-server")))
+        .tls()
+        .cert_path(opts.cert_path.clone())
+        .key_path(opts.key_path.clone());
+    if opts.control_no_tls {
+        log::info!("control endpoint: http://{}", control_addr);
+        let control_server = warp::serve(control_routes.with(warp::log("control-server")));
+        future::join(
+            signal_server.run(signal_addr),
+            control_server.run(control_addr),
+        )
+        .await;
+    } else {
+        log::info!("control graphql endpoint: https://{}", control_addr);
+        let control_server = warp::serve(control_routes.with(warp::log("control-server")))
             .tls()
             .cert_path(opts.cert_path)
-            .key_path(opts.key_path)
-            .run(opts.control_addr.parse::<SocketAddr>().unwrap()),
-    )
-    .await;
+            .key_path(opts.key_path);
+        future::join(
+            signal_server.run(signal_addr),
+            control_server.run(control_addr),
+        )
+        .await;
+    };
 }
 
 fn media_codecs() -> Vec<RtpCodecCapability> {

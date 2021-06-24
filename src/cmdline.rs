@@ -11,16 +11,19 @@ pub struct Opts {
     /// Path to certificate key to use for control and signal endpoints.
     #[clap(short, long)]
     pub key_path: String,
-    /// Listening address for signal endpoint.
+    /// Listen address for signal endpoint.
     #[clap(long, default_value = "127.0.0.1:8443")]
     pub signal_addr: String,
-    /// Listening address for control endpoint.
+    /// Listen address for control endpoint.
     #[clap(long, default_value = "127.0.0.1:9443")]
     pub control_addr: String,
     /// Listen address for RTC protocols.
     #[clap(long, default_value = "127.0.0.1")]
     pub rtc_ip: String,
-    // Announce address for RTC protocols.
+    /// Announce address for RTC protocols.
     #[clap(long)]
     pub rtc_announce_ip: Option<String>,
+    /// Disable TLS for control endpoint only.
+    #[clap(long)]
+    pub control_no_tls: bool,
 }

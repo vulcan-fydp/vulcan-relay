@@ -74,7 +74,7 @@ impl RelayServer {
                 } else if state.registered_rooms.contains_right(&vulcast_fsid) {
                     Err(RegisterRoomError::VulcastInRoom(vulcast_fsid))
                 } else {
-                    log::debug!("+foreign room {} (vulcast fsid {})", &frid, &vulcast_fsid);
+                    log::trace!("+foreign room {} (vulcast fsid {})", &frid, &vulcast_fsid);
                     state
                         .registered_rooms
                         .insert_no_overwrite(frid, vulcast_fsid)
@@ -96,7 +96,7 @@ impl RelayServer {
                 self.get_client_sessions_in_room(&frid)
                     .into_iter()
                     .for_each(|fsid| self.unregister_session(fsid).unwrap());
-                log::debug!("-foreign room {}", frid);
+                log::trace!("-foreign room {}", frid);
                 Ok(())
             }
             None => Err(UnregisterRoomError::UnknownRoom(frid)),
@@ -121,7 +121,7 @@ impl RelayServer {
                 .insert_no_overwrite(fsid.clone(), session_token)
             {
                 Ok(_) => {
-                    log::debug!("+foreign session {} [{:?}]", &fsid, session_options);
+                    log::trace!("+foreign session {} [{:?}]", &fsid, session_options);
                     state.session_options.insert(fsid, session_options.clone());
                     Ok(session_token)
                 }
@@ -152,7 +152,7 @@ impl RelayServer {
                         drop(self.take_session(&fsid));
                     }
                 }
-                log::debug!("-foreign session {} [{:?}]", &fsid, session_options);
+                log::trace!("-foreign session {} [{:?}]", &fsid, session_options);
                 Ok(())
             }
             None => Err(UnregisterSessionError::UnknownSession(fsid)),

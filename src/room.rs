@@ -51,7 +51,7 @@ struct State {
 impl Room {
     pub fn new(worker: Worker, codecs: Vec<RtpCodecCapability>) -> Self {
         let id = RoomId::new();
-        log::debug!("+room {}", id);
+        log::trace!("+room {}", id);
         Self {
             shared: Arc::new(Shared {
                 state: Mutex::new(State {
@@ -86,14 +86,14 @@ impl Room {
     pub fn add_session(&self, session: Session) {
         let mut state = self.shared.state.lock().unwrap();
         state.sessions.insert(session.id(), session.downgrade());
-        log::debug!("<-> session {} (room {})", session.id(), self.id());
+        log::trace!("<-> session {} (room {})", session.id(), self.id());
     }
 
     /// Remvoe a session from this room.
     pub fn remove_session(&self, session_id: SessionId) {
         let mut state = self.shared.state.lock().unwrap();
         state.sessions.remove(&session_id).unwrap();
-        log::debug!("</> session {} (room {})", session_id, self.id());
+        log::trace!("</> session {} (room {})", session_id, self.id());
     }
 
     /// Announce a new producer to all sessions in this room.
@@ -161,6 +161,6 @@ impl WeakRoom {
 
 impl Drop for Shared {
     fn drop(&mut self) {
-        log::debug!("-room {}", self.id)
+        log::trace!("-room {}", self.id)
     }
 }

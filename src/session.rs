@@ -68,7 +68,7 @@ struct State {
 impl Session {
     pub fn new(room: Room, transport_listen_ip: TransportListenIp) -> Self {
         let id = SessionId::new();
-        log::debug!("+session {}", id);
+        log::trace!("+session {}", id);
         let session = Self {
             shared: Arc::new(Shared {
                 state: Mutex::new(State {
@@ -102,7 +102,7 @@ impl Session {
         transport
             .connect(WebRtcTransportRemoteParameters { dtls_parameters })
             .await?;
-        log::debug!("<-> transport {} (session {})", transport.id(), self.id());
+        log::trace!("<-> transport {} (session {})", transport.id(), self.id());
         Ok(transport.id())
     }
 
@@ -130,7 +130,7 @@ impl Session {
             .await
             .unwrap()?;
 
-        log::debug!("+consumer {} (session {})", consumer.id(), self.id());
+        log::trace!("+consumer {} (session {})", consumer.id(), self.id());
         self.add_consumer(consumer.clone());
         Ok(consumer)
     }
@@ -164,7 +164,7 @@ impl Session {
             .unwrap()?;
         self.add_producer(producer.clone());
 
-        log::debug!("+producer {} (session {})", producer.id(), self.id());
+        log::trace!("+producer {} (session {})", producer.id(), self.id());
 
         Ok(producer)
     }
@@ -190,7 +190,7 @@ impl Session {
             .unwrap()?;
         self.add_producer(producer.clone());
 
-        log::debug!(
+        log::trace!(
             "+producer {} [plain] (session {})",
             producer.id(),
             self.id()
@@ -215,7 +215,7 @@ impl Session {
             .await
             .unwrap()?;
 
-        log::debug!(
+        log::trace!(
             "+data consumer {} (session {})",
             data_consumer.id(),
             self.id()
@@ -247,7 +247,7 @@ impl Session {
 
         let room = self.get_room();
         room.announce_data_producer(data_producer.id());
-        log::debug!(
+        log::trace!(
             "+data producer {} (session {})",
             data_producer.id(),
             self.id()
@@ -284,7 +284,7 @@ impl Session {
         state
             .webrtc_transports
             .insert(transport.id(), transport.clone());
-        log::debug!("+transport {} (session {})", transport.id(), self.id());
+        log::trace!("+transport {} (session {})", transport.id(), self.id());
         transport
     }
     pub fn get_webrtc_transport(&self, id: TransportId) -> Option<WebRtcTransport> {
@@ -308,7 +308,7 @@ impl Session {
         state
             .plain_transports
             .insert(plain_transport.id(), plain_transport.clone());
-        log::debug!(
+        log::trace!(
             "+transport {} [plain] (session {})",
             plain_transport.id(),
             self.id()
@@ -386,7 +386,7 @@ impl WeakSession {
 }
 impl Drop for Shared {
     fn drop(&mut self) {
-        log::debug!("-session {}", self.id);
+        log::trace!("-session {}", self.id);
         self.room.remove_session(self.id);
     }
 }
