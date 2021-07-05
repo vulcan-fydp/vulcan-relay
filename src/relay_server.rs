@@ -113,7 +113,9 @@ impl RelayServer {
         let mut state = self.shared.state.lock().unwrap();
         let session_token = SessionToken::new();
         match &session_options {
-            SessionOptions::WebClient(frid) if !state.registered_rooms.contains_left(frid) => {
+            SessionOptions::WebClient(frid) | SessionOptions::Host(frid)
+                if !state.registered_rooms.contains_left(frid) =>
+            {
                 Err(RegisterSessionError::UnknownRoom(frid.clone()))
             }
             _ => match state
@@ -146,7 +148,7 @@ impl RelayServer {
                             self.unregister_room(frid).unwrap();
                         }
                     }
-                    SessionOptions::WebClient(_) => {
+                    SessionOptions::WebClient(_) | SessionOptions::Host(_) => {
                         drop(state);
                         // nuke any active connections by dropping phy session
                         drop(self.take_session(&fsid));
@@ -193,7 +195,7 @@ impl RelayServer {
         // find vulcast fsid of the room this session should connect to
         let vulcast_fsid = match &session_options {
             SessionOptions::Vulcast => foreign_session_id.clone(),
-            SessionOptions::WebClient(frid) => {
+            SessionOptions::WebClient(frid) | SessionOptions::Host(frid) => {
                 state.registered_rooms.get_by_left(frid).cloned().unwrap()
             }
         };
@@ -209,7 +211,7 @@ impl RelayServer {
         state.rooms.insert(vulcast_fsid, room.downgrade()); // may re-insert
 
         // create and bind session to room
-        let session = Session::new(room, self.shared.transport_listen_ip);
+        let session = Session::new(room, session_options, self.shared.transport_listen_ip);
 
         // store owning session
         state.sessions.insert(foreign_session_id, session.clone());
@@ -267,6 +269,7 @@ impl SessionToken {
 pub enum SessionOptions {
     Vulcast,
     WebClient(ForeignRoomId),
+    Host(ForeignRoomId),
 }
 
 #[derive(Debug, Error, PartialEq, Eq, PartialOrd, Ord)]
