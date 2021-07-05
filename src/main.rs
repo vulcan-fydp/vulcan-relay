@@ -156,12 +156,12 @@ async fn main() {
         log::info!("control graphql endpoint: https://{}", control_addr);
         let signal_server = warp::serve(signal_routes.with(warp::log("signal-server")))
             .tls()
-            .cert_path(opts.cert_path.clone())
-            .key_path(opts.key_path.clone());
+            .cert_path(opts.cert_path.clone().unwrap())
+            .key_path(opts.key_path.clone().unwrap());
         let control_server = warp::serve(control_routes.with(warp::log("control-server")))
             .tls()
-            .cert_path(opts.cert_path)
-            .key_path(opts.key_path);
+            .cert_path(opts.cert_path.unwrap())
+            .key_path(opts.key_path.unwrap());
         future::join(
             signal_server.run(signal_addr),
             control_server.run(control_addr),

@@ -6,11 +6,11 @@ use clap::{AppSettings, Clap};
 #[clap(setting = AppSettings::ColoredHelp)]
 pub struct Opts {
     /// Path to certificate to use for control and signal endpoints.
-    #[clap(short, long)]
-    pub cert_path: String,
+    #[clap(short, long, required_unless_present("no-tls"))]
+    pub cert_path: Option<String>,
     /// Path to certificate key to use for control and signal endpoints.
-    #[clap(short, long)]
-    pub key_path: String,
+    #[clap(short, long, required_unless_present("no-tls"))]
+    pub key_path: Option<String>,
     /// Listen address for signal endpoint.
     #[clap(long, default_value = "127.0.0.1:8443")]
     pub signal_addr: String,
@@ -24,6 +24,6 @@ pub struct Opts {
     #[clap(long)]
     pub rtc_announce_ip: Option<String>,
     /// Disable TLS for all endpoints.
-    #[clap(long)]
+    #[clap(long, conflicts_with_all(&["cert-path", "key-path"]))]
     pub no_tls: bool,
 }
