@@ -45,6 +45,7 @@ pub struct ClientStateUpdate {
     pub session_id: SessionId,
 }
 
+#[derive(Debug)]
 struct Shared {
     state: Mutex<State>,
 
