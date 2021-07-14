@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y \
 # build dependencies (including mediasoup-sys)
 WORKDIR /usr/src/vulcan-relay
 RUN USER=root cargo init
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml Cargo.lock build.rs ./
 COPY third-party ./third-party
 RUN cargo build --release
 
