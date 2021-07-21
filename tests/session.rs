@@ -105,31 +105,19 @@ async fn producer_consumer_connected_after_signalling() {
     let producer_id2 = producer_stream.next().await.unwrap();
 
     let _consumer1 = webclient
-        .consume(
-            &local_pool,
-            webclient_recv_transport.id(),
-            producer_id1,
-        )
+        .consume(&local_pool, webclient_recv_transport.id(), producer_id1)
         .await
         .unwrap();
 
     let _consumer2 = webclient
-        .consume(
-            &local_pool,
-            webclient_recv_transport.id(),
-            producer_id2,
-        )
+        .consume(&local_pool, webclient_recv_transport.id(), producer_id2)
         .await
         .unwrap();
 
     let data_producer_id1 = data_producer_stream.next().await.unwrap();
 
     let _data_consumer1 = vulcast
-        .consume_data(
-            &local_pool,
-            vulcast_recv_transport.id(),
-            data_producer_id1,
-        )
+        .consume_data(&local_pool, vulcast_recv_transport.id(), data_producer_id1)
         .await
         .unwrap();
 }
