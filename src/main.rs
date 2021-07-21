@@ -1,4 +1,5 @@
 use futures::future;
+use mediasoup::worker::{WorkerLogLevel, WorkerLogTag};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::num::{NonZeroU32, NonZeroU8};
@@ -48,10 +49,14 @@ async fn main() {
     let media_codecs = media_codecs();
 
     let worker_manager = WorkerManager::new();
-    let worker = worker_manager
-        .create_worker(WorkerSettings::default())
-        .await
-        .unwrap();
+    let mut worker_settings = WorkerSettings::default();
+    worker_settings.log_level = WorkerLogLevel::Debug;
+    worker_settings.log_tags = vec![
+        WorkerLogTag::Sctp,
+        WorkerLogTag::Ice,
+        WorkerLogTag::Message,
+    ];
+    let worker = worker_manager.create_worker(worker_settings).await.unwrap();
     let relay_server = RelayServer::new(worker, transport_listen_ip, media_codecs);
 
     let signal_schema = signal_schema::schema();
@@ -187,6 +192,7 @@ fn media_codecs() -> Vec<RtpCodecCapability> {
             parameters: RtpCodecParametersParameters::from([
                 ("packetization-mode", 0u32.into()),
                 ("level-asymmetry-allowed", 1u32.into()),
+                ("profile-level-id", "42e01f".into()),
             ]),
             rtcp_feedback: vec![
                 RtcpFeedback::Nack,
