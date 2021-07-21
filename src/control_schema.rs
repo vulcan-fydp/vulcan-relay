@@ -5,6 +5,7 @@ use crate::relay_server::{
     ForeignRoomId, ForeignSessionId, RegisterRoomError, RegisterSessionError, RelayServer,
     SessionOptions, UnregisterRoomError, UnregisterSessionError,
 };
+use crate::util::LOCAL_POOL;
 
 #[derive(Default)]
 pub struct QueryRoot;
@@ -19,6 +20,13 @@ impl QueryRoot {
             built_info::TARGET,
             built_info::PROFILE
         )
+    }
+
+    /// Get various statistics for a session.
+    async fn stats(&self, ctx: &Context<'_>, fsid: ID) -> Option<String> {
+        let relay_server = ctx.data_unchecked::<RelayServer>();
+        let session = relay_server.get_session(&ForeignSessionId::from(fsid))?;
+        serde_json::to_string(&session.get_stats(&LOCAL_POOL).await).ok()
     }
 }
 
@@ -36,8 +44,8 @@ impl MutationRoot {
     ) -> RegisterRoomResult {
         let relay_server = ctx.data_unchecked::<RelayServer>();
         match relay_server.register_room(
-            ForeignRoomId(room_id.clone().into()),
-            ForeignSessionId(vulcast_session_id.into()),
+            ForeignRoomId::from(room_id.clone()),
+            ForeignSessionId::from(vulcast_session_id),
         ) {
             Ok(_) => RegisterRoomResult::Ok(Room { id: room_id }),
             Err(err) => err.into(),
@@ -47,7 +55,7 @@ impl MutationRoot {
     /// This will also unregister all sessions associated with this room.
     async fn unregister_room(&self, ctx: &Context<'_>, room_id: ID) -> UnregisterRoomResult {
         let relay_server = ctx.data_unchecked::<RelayServer>();
-        match relay_server.unregister_room(ForeignRoomId(room_id.clone().into())) {
+        match relay_server.unregister_room(ForeignRoomId::from(room_id.clone())) {
             Ok(_) => UnregisterRoomResult::Ok(Room { id: room_id }),
             Err(err) => err.into(),
         }
@@ -63,7 +71,7 @@ impl MutationRoot {
     ) -> RegisterSessionResult {
         let relay_server = ctx.data_unchecked::<RelayServer>();
         match relay_server.register_session(
-            ForeignSessionId(session_id.clone().into()),
+            ForeignSessionId::from(session_id.clone()),
             SessionOptions::Vulcast,
         ) {
             Ok(session_token) => RegisterSessionResult::Ok(SessionWithToken {
@@ -85,8 +93,8 @@ impl MutationRoot {
     ) -> RegisterSessionResult {
         let relay_server = ctx.data_unchecked::<RelayServer>();
         match relay_server.register_session(
-            ForeignSessionId(session_id.clone().into()),
-            SessionOptions::WebClient(ForeignRoomId(room_id.into())),
+            ForeignSessionId::from(session_id.clone()),
+            SessionOptions::WebClient(ForeignRoomId::from(room_id)),
         ) {
             Ok(session_token) => RegisterSessionResult::Ok(SessionWithToken {
                 id: session_id,
@@ -107,8 +115,8 @@ impl MutationRoot {
     ) -> RegisterSessionResult {
         let relay_server = ctx.data_unchecked::<RelayServer>();
         match relay_server.register_session(
-            ForeignSessionId(session_id.clone().into()),
-            SessionOptions::Host(ForeignRoomId(room_id.into())),
+            ForeignSessionId::from(session_id.clone()),
+            SessionOptions::Host(ForeignRoomId::from(room_id)),
         ) {
             Ok(session_token) => RegisterSessionResult::Ok(SessionWithToken {
                 id: session_id,
@@ -125,7 +133,7 @@ impl MutationRoot {
         session_id: ID,
     ) -> UnregisterSessionResult {
         let relay_server = ctx.data_unchecked::<RelayServer>();
-        match relay_server.unregister_session(ForeignSessionId(session_id.clone().into())) {
+        match relay_server.unregister_session(ForeignSessionId::from(session_id.clone())) {
             Ok(_) => UnregisterSessionResult::Ok(Session { id: session_id }),
             Err(err) => err.into(),
         }
@@ -262,6 +270,18 @@ impl From<UnregisterSessionError> for UnregisterSessionResult {
                 })
             }
         }
+    }
+}
+
+impl From<ID> for ForeignSessionId {
+    fn from(id: ID) -> Self {
+        Self(String::from(id))
+    }
+}
+
+impl From<ID> for ForeignRoomId {
+    fn from(id: ID) -> Self {
+        Self(String::from(id))
     }
 }
 

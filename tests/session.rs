@@ -75,7 +75,7 @@ async fn producer_consumer_connected_after_signalling() {
 
     let _audio_producer = vulcast
         .produce(
-            local_pool.clone(),
+            &local_pool,
             vulcast_send_transport.id(),
             MediaKind::Audio,
             fixture::audio_producer_device_parameters(),
@@ -84,7 +84,7 @@ async fn producer_consumer_connected_after_signalling() {
         .unwrap();
     let _video_producer = vulcast
         .produce(
-            local_pool.clone(),
+            &local_pool,
             vulcast_send_transport.id(),
             MediaKind::Video,
             fixture::video_producer_device_parameters(),
@@ -94,7 +94,7 @@ async fn producer_consumer_connected_after_signalling() {
 
     let _data_producer = webclient
         .produce_data(
-            local_pool.clone(),
+            &local_pool,
             webclient_send_transport.id(),
             fixture::sctp_stream_parameters(),
         )
@@ -106,7 +106,7 @@ async fn producer_consumer_connected_after_signalling() {
 
     let _consumer1 = webclient
         .consume(
-            local_pool.clone(),
+            &local_pool,
             webclient_recv_transport.id(),
             producer_id1,
         )
@@ -115,7 +115,7 @@ async fn producer_consumer_connected_after_signalling() {
 
     let _consumer2 = webclient
         .consume(
-            local_pool.clone(),
+            &local_pool,
             webclient_recv_transport.id(),
             producer_id2,
         )
@@ -126,7 +126,7 @@ async fn producer_consumer_connected_after_signalling() {
 
     let _data_consumer1 = vulcast
         .consume_data(
-            local_pool.clone(),
+            &local_pool,
             vulcast_recv_transport.id(),
             data_producer_id1,
         )

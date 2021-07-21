@@ -1,3 +1,5 @@
+use futures::{stream, StreamExt};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
 use uuid::Uuid;
@@ -5,18 +7,18 @@ use uuid::Uuid;
 use anyhow::{anyhow, Result};
 use derive_more::Display;
 use mediasoup::{
-    consumer::{Consumer, ConsumerId, ConsumerOptions},
-    data_consumer::{DataConsumer, DataConsumerId, DataConsumerOptions},
-    data_producer::{DataProducer, DataProducerId, DataProducerOptions},
+    consumer::{Consumer, ConsumerId, ConsumerOptions, ConsumerStat, ConsumerStats},
+    data_consumer::{DataConsumer, DataConsumerId, DataConsumerOptions, DataConsumerStat},
+    data_producer::{DataProducer, DataProducerId, DataProducerOptions, DataProducerStat},
     data_structures::{DtlsParameters, TransportListenIp},
-    plain_transport::{PlainTransport, PlainTransportOptions},
-    producer::{Producer, ProducerId, ProducerOptions},
+    plain_transport::{PlainTransport, PlainTransportOptions, PlainTransportStat},
+    producer::{Producer, ProducerId, ProducerOptions, ProducerStat},
     rtp_parameters::{MediaKind, RtpCapabilities, RtpParameters},
     sctp_parameters::SctpStreamParameters,
-    transport::{Transport, TransportId},
+    transport::{Transport, TransportGeneric, TransportId},
     webrtc_transport::{
         TransportListenIps, WebRtcTransport, WebRtcTransportOptions,
-        WebRtcTransportRemoteParameters,
+        WebRtcTransportRemoteParameters, WebRtcTransportStat,
     },
 };
 
@@ -118,7 +120,7 @@ impl Session {
     /// Create a local consumer on the receive WebRTC transport.
     pub async fn consume(
         &self,
-        local_pool: tokio_local::LocalPoolHandle,
+        local_pool: &tokio_local::LocalPoolHandle,
         transport_id: TransportId,
         producer_id: ProducerId,
     ) -> Result<Consumer> {
@@ -155,7 +157,7 @@ impl Session {
     /// Create a local producer on the send WebRTC transport.
     pub async fn produce(
         &self,
-        local_pool: tokio_local::LocalPoolHandle,
+        local_pool: &tokio_local::LocalPoolHandle,
         transport_id: TransportId,
         kind: MediaKind,
         rtp_parameters: RtpParameters,
@@ -180,7 +182,7 @@ impl Session {
 
     pub async fn produce_plain(
         &self,
-        local_pool: tokio_local::LocalPoolHandle,
+        local_pool: &tokio_local::LocalPoolHandle,
         transport_id: TransportId,
         kind: MediaKind,
         rtp_parameters: RtpParameters,
@@ -210,7 +212,7 @@ impl Session {
     /// Create a local data consumer on the receive WebRTC transport.
     pub async fn consume_data(
         &self,
-        local_pool: tokio_local::LocalPoolHandle,
+        local_pool: &tokio_local::LocalPoolHandle,
         transport_id: TransportId,
         data_producer_id: DataProducerId,
     ) -> Result<DataConsumer> {
@@ -236,7 +238,7 @@ impl Session {
     /// Create a local data producer on the send WebRTC transport.
     pub async fn produce_data(
         &self,
-        local_pool: tokio_local::LocalPoolHandle,
+        local_pool: &tokio_local::LocalPoolHandle,
         transport_id: TransportId,
         sctp_stream_parameters: SctpStreamParameters,
     ) -> Result<DataProducer> {
@@ -263,6 +265,73 @@ impl Session {
         );
 
         Ok(data_producer)
+    }
+
+    /// Get aggregation of all stats related to this session.
+    /// Is quite computationally expensive to produce.
+    #[allow(clippy::eval_order_dependence)]
+    pub async fn get_stats(&self, local_pool: &tokio_local::LocalPoolHandle) -> Stats {
+        let consumers = self.get_consumers();
+        let producers = self.get_producers();
+        let data_consumers = self.get_data_consumers();
+        let data_producers = self.get_data_producers();
+        let webrtc_transports = self.get_webrtc_transports();
+        let plain_transports = self.get_plain_transports();
+        local_pool
+            .spawn_pinned(move || async move {
+                Stats {
+                    consumer_stats: stream::iter(consumers)
+                        .then(|consumer| async move {
+                            (
+                                consumer.id(),
+                                match consumer.get_stats().await.unwrap() {
+                                    ConsumerStats::JustConsumer((c,))
+                                    | ConsumerStats::WithProducer((c, _)) => c,
+                                },
+                            )
+                        })
+                        .collect::<HashMap<_, _>>()
+                        .await,
+                    producer_stats: stream::iter(producers)
+                        .then(|producer| async move {
+                            (producer.id(), producer.get_stats().await.unwrap())
+                        })
+                        .collect::<HashMap<_, _>>()
+                        .await,
+                    data_consumer_stats: stream::iter(data_consumers)
+                        .then(|data_consumer| async move {
+                            (data_consumer.id(), data_consumer.get_stats().await.unwrap())
+                        })
+                        .collect::<HashMap<_, _>>()
+                        .await,
+                    data_producer_stats: stream::iter(data_producers)
+                        .then(|data_producer| async move {
+                            (data_producer.id(), data_producer.get_stats().await.unwrap())
+                        })
+                        .collect::<HashMap<_, _>>()
+                        .await,
+                    webrtc_transport_stats: stream::iter(webrtc_transports)
+                        .then(|webrtc_transport| async move {
+                            (
+                                webrtc_transport.id(),
+                                webrtc_transport.get_stats().await.unwrap(),
+                            )
+                        })
+                        .collect::<HashMap<_, _>>()
+                        .await,
+                    plain_transport_stats: stream::iter(plain_transports)
+                        .then(|plain_transport| async move {
+                            (
+                                plain_transport.id(),
+                                plain_transport.get_stats().await.unwrap(),
+                            )
+                        })
+                        .collect::<HashMap<_, _>>()
+                        .await,
+                }
+            })
+            .await
+            .unwrap()
     }
 
     pub fn id(&self) -> SessionId {
@@ -303,6 +372,14 @@ impl Session {
         let state = self.shared.state.lock().unwrap();
         state.webrtc_transports.get(&id).cloned()
     }
+    pub fn get_webrtc_transports(&self) -> Vec<WebRtcTransport> {
+        let state = self.shared.state.lock().unwrap();
+        state
+            .webrtc_transports
+            .values()
+            .cloned()
+            .collect::<Vec<WebRtcTransport>>()
+    }
     pub async fn create_plain_transport(&self) -> PlainTransport {
         let mut plain_transport_options =
             PlainTransportOptions::new(self.shared.transport_listen_ip);
@@ -331,6 +408,14 @@ impl Session {
         let state = self.shared.state.lock().unwrap();
         state.plain_transports.get(&id).cloned()
     }
+    pub fn get_plain_transports(&self) -> Vec<PlainTransport> {
+        let state = self.shared.state.lock().unwrap();
+        state
+            .plain_transports
+            .values()
+            .cloned()
+            .collect::<Vec<PlainTransport>>()
+    }
 
     pub fn set_rtp_capabilities(&self, rtp_capabilities: RtpCapabilities) {
         let mut state = self.shared.state.lock().unwrap();
@@ -348,6 +433,10 @@ impl Session {
     pub fn get_consumer(&self, id: ConsumerId) -> Option<Consumer> {
         let state = self.shared.state.lock().unwrap();
         state.consumers.get(&id).cloned()
+    }
+    pub fn get_consumers(&self) -> Vec<Consumer> {
+        let state = self.shared.state.lock().unwrap();
+        state.consumers.values().cloned().collect::<Vec<Consumer>>()
     }
 
     pub fn add_producer(&self, producer: Producer) {
@@ -389,6 +478,14 @@ impl Session {
             .data_consumers
             .insert(data_consumer.id(), data_consumer);
     }
+    pub fn get_data_consumers(&self) -> Vec<DataConsumer> {
+        let state = self.shared.state.lock().unwrap();
+        state
+            .data_consumers
+            .values()
+            .cloned()
+            .collect::<Vec<DataConsumer>>()
+    }
 }
 impl WeakSession {
     pub fn upgrade(&self) -> Option<Session> {
@@ -401,4 +498,14 @@ impl Drop for Shared {
         log::trace!("-session {}", self.id);
         self.room.remove_session(self.id);
     }
+}
+
+#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+pub struct Stats {
+    consumer_stats: HashMap<ConsumerId, ConsumerStat>,
+    producer_stats: HashMap<ProducerId, Vec<ProducerStat>>,
+    data_consumer_stats: HashMap<DataConsumerId, Vec<DataConsumerStat>>,
+    data_producer_stats: HashMap<DataProducerId, Vec<DataProducerStat>>,
+    webrtc_transport_stats: HashMap<TransportId, Vec<WebRtcTransportStat>>,
+    plain_transport_stats: HashMap<TransportId, Vec<PlainTransportStat>>,
 }

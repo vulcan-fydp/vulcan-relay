@@ -86,16 +86,15 @@ dependencies = [
 
 [[package]]
 name = "async-graphql"
-version = "2.9.9"
+version = "2.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6745cb39edc36e207b5d6e35d6684fd8d7721f071010a7eff31aaeb5684e3da6"
+checksum = "c07da609e7c59d60c1ca88d743f99df0c79fd431f977acc426a96aa59c0013c2"
 dependencies = [
  "async-graphql-derive",
  "async-graphql-parser",
  "async-graphql-value",
  "async-stream",
  "async-trait",
- "bytes",
  "fnv",
  "futures-util",
  "http",
@@ -113,9 +112,9 @@ dependencies = [
 
 [[package]]
 name = "async-graphql-derive"
-version = "2.9.9"
+version = "2.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63ad0f21d7fab6d70b5cc5c78688ff1d73d2a7fedf7622e1f3cb76b84e6619b9"
+checksum = "21bb58a182c309b6892a3d051d9639d29d027ae3e271b81f9d0aaa2072c4add4"
 dependencies = [
  "Inflector",
  "async-graphql-parser",
@@ -129,9 +128,9 @@ dependencies = [
 
 [[package]]
 name = "async-graphql-parser"
-version = "2.9.9"
+version = "2.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ba07ce86d05abe3aa8948fde3fd1c76f44bb754b9c6156d9c885ae1491edcc2"
+checksum = "467b630648f842082f41342388b6c74fc0b993e7b4a940bc25660a76b529f7b1"
 dependencies = [
  "async-graphql-value",
  "pest",
@@ -142,20 +141,19 @@ dependencies = [
 
 [[package]]
 name = "async-graphql-value"
-version = "2.9.9"
+version = "2.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a0957e87f88e9e62a161e80662d6aa6e78e6d863c24aea55dc43ee8dc384ed9"
+checksum = "d8342ada84efe4b3d59e1313d1d2740a8ccfc76ddb57ccf55e45a6464dd7d0d3"
 dependencies = [
- "bytes",
  "serde",
  "serde_json",
 ]
 
 [[package]]
 name = "async-graphql-warp"
-version = "2.9.9"
+version = "2.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edd37032999dddbe659cb970f565435d159fc525d15d17ea8f27eecfad5299b2"
+checksum = "cc2beea0923eba226467e6ee0031fef22f45bdb3fc2c63f244191c78af9ce83b"
 dependencies = [
  "async-graphql",
  "futures-util",
@@ -388,12 +386,15 @@ checksum = "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610"
 
 [[package]]
 name = "bytes"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e4cec68f03f32e44924783795810fa50a7035d8c8ebe78580ad7e6c703fba38"
+
+[[package]]
+name = "bytes"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b700ce4376041dcd0a327fd0097c41095743c4c8af8887265942faf1100bd040"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "cache-padded"
@@ -575,12 +576,6 @@ checksum = "d3dd60d1080a57a05ab032377049e0591415d2b31afd7028356dbf3cc6dcb066"
 dependencies = [
  "generic-array 0.14.4",
 ]
-
-[[package]]
-name = "doc-comment"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fea41bba32d969b513997752735605054bc0dfa92b4c56bf1189f2e174be7a10"
 
 [[package]]
 name = "either"
@@ -861,15 +856,6 @@ checksum = "0e4075386626662786ddb0ec9081e7c7eeb1ba31951f447ca780ef9f5d568189"
 
 [[package]]
 name = "graphql-introspection-query"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "610aac641dbd2a457ad4cef34aa2827dae3f035fd214cb38c2d62d8543f3973f"
-dependencies = [
- "serde",
-]
-
-[[package]]
-name = "graphql-introspection-query"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f2a4732cf5140bd6c082434494f785a19cfb566ab07d1382c3671f5812fed6d"
@@ -889,11 +875,11 @@ dependencies = [
 
 [[package]]
 name = "graphql-ws"
-version = "0.3.1"
-source = "git+https://github.com/Netdex/graphql-ws#c4fa1f5ca46232d9c2ff507185bbed965d93f428"
+version = "0.3.2"
+source = "git+https://github.com/Netdex/graphql-ws#c25c981cf9b2c394f291818b1008f04e065440cc"
 dependencies = [
  "futures",
- "graphql_client 0.9.0",
+ "graphql_client",
  "serde",
  "serde_json",
  "thiserror",
@@ -904,43 +890,13 @@ dependencies = [
 
 [[package]]
 name = "graphql_client"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0bb4f09181e4f80018d01c612125b07e0156f3753bfac37055fe2a25e031ca8"
-dependencies = [
- "doc-comment",
- "graphql_query_derive 0.9.0",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "graphql_client"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a9b58571cfc3cc42c3e8ff44fc6cfbb6c0dea17ed22d20f9d8f1efc4e8209a3f"
 dependencies = [
- "graphql_query_derive 0.10.0",
+ "graphql_query_derive",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "graphql_client_codegen"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e304c223c809b3bff4614018f8e6d9edb176b31d64ed9ea48b6ae8b1a03abb9"
-dependencies = [
- "failure",
- "graphql-introspection-query 0.1.0",
- "graphql-parser",
- "heck",
- "lazy_static",
- "proc-macro2",
- "quote",
- "serde",
- "serde_json",
- "syn",
 ]
 
 [[package]]
@@ -949,7 +905,7 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4bf9cd823359d74ad3d3ecf1afd4a975f4ff2f891cdf9a66744606daf52de8c"
 dependencies = [
- "graphql-introspection-query 0.2.0",
+ "graphql-introspection-query",
  "graphql-parser",
  "heck",
  "lazy_static",
@@ -957,18 +913,6 @@ dependencies = [
  "quote",
  "serde",
  "serde_json",
- "syn",
-]
-
-[[package]]
-name = "graphql_query_derive"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1f6b14d5ce549227aa9e649cd9d36d008b91021275a8e0a67d71cef815adc2f"
-dependencies = [
- "failure",
- "graphql_client_codegen 0.9.0",
- "proc-macro2",
  "syn",
 ]
 
@@ -978,7 +922,7 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e56b093bfda71de1da99758b036f4cc811fd2511c8a76f75680e9ffbd2bb4251"
 dependencies = [
- "graphql_client_codegen 0.10.0",
+ "graphql_client_codegen",
  "proc-macro2",
  "syn",
 ]
@@ -989,7 +933,7 @@ version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "825343c4eef0b63f541f8903f395dc5beb362a979b5799a84062527ef1e37726"
 dependencies = [
- "bytes",
+ "bytes 1.0.1",
  "fnv",
  "futures-core",
  "futures-sink",
@@ -1028,7 +972,7 @@ checksum = "f0b7591fb62902706ae8e7aaff416b1b0fa2c0fd0878b46dc13baa3712d8a855"
 dependencies = [
  "base64",
  "bitflags",
- "bytes",
+ "bytes 1.0.1",
  "headers-core",
  "http",
  "mime",
@@ -1069,7 +1013,7 @@ version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "527e8c9ac747e28542699a951517aa9a6945af506cd1f2e1b53a576c17b6cc11"
 dependencies = [
- "bytes",
+ "bytes 1.0.1",
  "fnv",
  "itoa",
 ]
@@ -1080,7 +1024,7 @@ version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "60daa14be0e0786db0f03a9e57cb404c9d756eed2b6c62b9ea98ec5743ec75a9"
 dependencies = [
- "bytes",
+ "bytes 1.0.1",
  "http",
  "pin-project-lite",
 ]
@@ -1109,7 +1053,7 @@ version = "0.14.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7728a72c4c7d72665fde02204bcbd93b247721025b222ef78606f14513e0fd03"
 dependencies = [
- "bytes",
+ "bytes 1.0.1",
  "futures-channel",
  "futures-core",
  "futures-util",
@@ -1160,7 +1104,7 @@ version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f97967975f448f1a7ddb12b0bc41069d09ed6a1c161a92687e057325db35d413"
 dependencies = [
- "bytes",
+ "bytes 1.0.1",
 ]
 
 [[package]]
@@ -1249,7 +1193,7 @@ dependencies = [
  "async-lock",
  "async-oneshot",
  "async-trait",
- "bytes",
+ "bytes 1.0.1",
  "event-listener-primitives",
  "fastrand",
  "futures-lite",
@@ -1330,21 +1274,21 @@ dependencies = [
 
 [[package]]
 name = "multer"
-version = "2.0.0"
+version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fdd568fea4758b30d6423f013f7171e193c34aa97828d1bd9f924fb3af30a8c"
+checksum = "99851e6ad01b0fbe086dda2dea00d68bb84fc7d7eae2c39ca7313da9197f4d31"
 dependencies = [
- "bytes",
+ "bytes 0.5.6",
  "derive_more",
  "encoding_rs",
- "futures-util",
+ "futures",
  "http",
  "httparse",
+ "lazy_static",
  "log",
  "mime",
- "spin 0.9.2",
+ "regex",
  "twoway 0.2.2",
- "version_check",
 ]
 
 [[package]]
@@ -1819,7 +1763,7 @@ dependencies = [
  "cc",
  "libc",
  "once_cell",
- "spin 0.5.2",
+ "spin",
  "untrusted",
  "web-sys",
  "winapi",
@@ -2055,12 +1999,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
 
 [[package]]
-name = "spin"
-version = "0.9.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "511254be0c5bcf062b019a6c89c01a664aa359ded62f78aa72c6fc137c0590e5"
-
-[[package]]
 name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2179,7 +2117,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2602b8af3767c285202012822834005f596c811042315fa7e9f5b12b2a43207"
 dependencies = [
  "autocfg",
- "bytes",
+ "bytes 1.0.1",
  "libc",
  "memchr",
  "mio",
@@ -2276,7 +2214,7 @@ version = "0.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1caa0b0c8d94a049db56b5acf8cba99dc0623aab1b26d5b5f5e2d945846b3592"
 dependencies = [
- "bytes",
+ "bytes 1.0.1",
  "futures-core",
  "futures-sink",
  "log",
@@ -2334,7 +2272,7 @@ checksum = "8ada8297e8d70872fa9a551d93250a9f407beb9f37ef86494eb20012a2ff7c24"
 dependencies = [
  "base64",
  "byteorder",
- "bytes",
+ "bytes 1.0.1",
  "http",
  "httparse",
  "input_buffer",
@@ -2353,7 +2291,7 @@ checksum = "a0b2d8558abd2e276b0a8df5c05a2ec762609344191e5fd23e292c910e9165b5"
 dependencies = [
  "base64",
  "byteorder",
- "bytes",
+ "bytes 1.0.1",
  "http",
  "httparse",
  "log",
@@ -2529,8 +2467,9 @@ dependencies = [
  "env_logger",
  "futures",
  "graphql-ws",
- "graphql_client 0.10.0",
+ "graphql_client",
  "http",
+ "lazy_static",
  "log",
  "mediasoup",
  "native-tls",
@@ -2567,7 +2506,7 @@ version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "332d47745e9a0c38636dbd454729b147d16bd1ed08ae67b3ab281c4506771054"
 dependencies = [
- "bytes",
+ "bytes 1.0.1",
  "futures",
  "headers",
  "http",

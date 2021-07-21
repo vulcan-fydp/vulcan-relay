@@ -6,6 +6,7 @@ use async_graphql::{scalar, Context, Object, Result, Schema, Subscription};
 use mediasoup::transport::Transport;
 
 use crate::session::{Session, WeakSession};
+use crate::util::LOCAL_POOL;
 
 fn session_from_ctx(ctx: &Context<'_>) -> Result<Session, anyhow::Error> {
     ctx.data_opt::<WeakSession>()
@@ -84,10 +85,9 @@ impl MutationRoot {
         transport_id: TransportId,
         producer_id: ProducerId,
     ) -> Result<ConsumerOptions> {
-        let local_pool = ctx.data_unchecked::<tokio_local::LocalPoolHandle>();
         let session = session_from_ctx(ctx)?;
         let consumer = session
-            .consume(local_pool.clone(), transport_id.0, producer_id.0)
+            .consume(&LOCAL_POOL, transport_id.0, producer_id.0)
             .await?;
         Ok(ConsumerOptions {
             id: consumer.id(),
@@ -112,11 +112,10 @@ impl MutationRoot {
         kind: MediaKind,
         rtp_parameters: RtpParameters,
     ) -> Result<ProducerId> {
-        let local_pool = ctx.data_unchecked::<tokio_local::LocalPoolHandle>();
         let session = session_from_ctx(ctx)?;
         Ok(ProducerId(
             session
-                .produce(local_pool.clone(), transport_id.0, kind.0, rtp_parameters.0)
+                .produce(&LOCAL_POOL, transport_id.0, kind.0, rtp_parameters.0)
                 .await?
                 .id(),
         ))
@@ -130,11 +129,10 @@ impl MutationRoot {
         kind: MediaKind,
         rtp_parameters: RtpParameters,
     ) -> Result<ProducerId> {
-        let local_pool = ctx.data_unchecked::<tokio_local::LocalPoolHandle>();
         let session = session_from_ctx(ctx)?;
         Ok(ProducerId(
             session
-                .produce_plain(local_pool.clone(), transport_id.0, kind.0, rtp_parameters.0)
+                .produce_plain(&LOCAL_POOL, transport_id.0, kind.0, rtp_parameters.0)
                 .await?
                 .id(),
         ))
@@ -147,10 +145,9 @@ impl MutationRoot {
         transport_id: TransportId,
         data_producer_id: DataProducerId,
     ) -> Result<DataConsumerOptions> {
-        let local_pool = ctx.data_unchecked::<tokio_local::LocalPoolHandle>();
         let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
         let data_consumer = session
-            .consume_data(local_pool.clone(), transport_id.0, data_producer_id.0)
+            .consume_data(&LOCAL_POOL, transport_id.0, data_producer_id.0)
             .await?;
         Ok(DataConsumerOptions {
             id: data_consumer.id(),
@@ -166,11 +163,10 @@ impl MutationRoot {
         transport_id: TransportId,
         sctp_stream_parameters: SctpStreamParameters,
     ) -> Result<DataProducerId> {
-        let local_pool = ctx.data_unchecked::<tokio_local::LocalPoolHandle>();
         let session = session_from_ctx(ctx)?;
         Ok(DataProducerId(
             session
-                .produce_data(local_pool.clone(), transport_id.0, sctp_stream_parameters.0)
+                .produce_data(&LOCAL_POOL, transport_id.0, sctp_stream_parameters.0)
                 .await?
                 .id(),
         ))
@@ -204,9 +200,7 @@ impl SubscriptionRoot {
 pub type SignalSchema = Schema<QueryRoot, MutationRoot, SubscriptionRoot>;
 
 pub fn schema() -> SignalSchema {
-    SignalSchema::build(QueryRoot, MutationRoot, SubscriptionRoot)
-        .data(tokio_local::new_local_pool(2))
-        .finish()
+    SignalSchema::build(QueryRoot, MutationRoot, SubscriptionRoot).finish()
 }
 
 #[derive(Deserialize, Serialize, Clone, Copy)]

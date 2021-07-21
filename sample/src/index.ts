@@ -191,6 +191,38 @@ let clientSub: SubscriptionClient | null = null;
         console.log('unregisterRoom', data.__typename, data);
     });
 }, false);
+(document.getElementById("dumpClientStats") as HTMLButtonElement).addEventListener("click", async function () {
+    let client = getControlConnection();
+    await client.query({
+        query: gql`
+                query($fsid: ID!){
+                    stats(fsid: $fsid) 
+                }
+                `,
+        variables: {
+            fsid: clientId()
+        }
+    }).then(response => {
+        let data = response.data.stats;
+        console.log('client stats', JSON.parse(data));
+    });
+}, false);
+(document.getElementById("dumpVulcastStats") as HTMLButtonElement).addEventListener("click", async function () {
+    let client = getControlConnection();
+    await client.query({
+        query: gql`
+                query($fsid: ID!){
+                    stats(fsid: $fsid) 
+                }
+                `,
+        variables: {
+            fsid: vulcastId()
+        }
+    }).then(response => {
+        let data = response.data.stats;
+        console.log('vulcast stats', JSON.parse(data));
+    });
+}, false);
 
 // const canvas = document.querySelector('canvas') as HTMLCanvasElement;
 

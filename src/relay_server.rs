@@ -161,6 +161,13 @@ impl RelayServer {
         }
     }
 
+    /// Get a reference to a PHY session by FSID. You MUST drop this reference
+    /// after you are done with it.
+    pub fn get_session(&self, fsid: &ForeignSessionId) -> Option<Session> {
+        let state = self.shared.state.lock().unwrap();
+        state.sessions.get(fsid).cloned()
+    }
+
     /// Take ownership of PHY session by FSID.
     pub fn take_session(&self, fsid: &ForeignSessionId) -> Option<Session> {
         let mut state = self.shared.state.lock().unwrap();
