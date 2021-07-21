@@ -1,12 +1,11 @@
 use futures::future;
-use mediasoup::worker::{WorkerLogLevel, WorkerLogTag};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::num::{NonZeroU32, NonZeroU8};
-use std::sync::{Arc, Mutex};
 
 use async_graphql::http::{playground_source, GraphQLPlaygroundConfig};
 use clap::Clap;
+use mediasoup::worker::{WorkerLogLevel, WorkerLogTag};
 use mediasoup::{
     data_structures::TransportListenIp,
     rtp_parameters::{
@@ -16,14 +15,14 @@ use mediasoup::{
     worker::WorkerSettings,
     worker_manager::WorkerManager,
 };
+use tokio::sync::oneshot;
 use warp::{http::Response as HttpResponse, Filter};
 
-use vulcan_relay::built_info;
 use vulcan_relay::{
     cmdline::Opts,
-    control_schema::{self, ControlSchema},
+    control_schema::ControlSchema,
     relay_server::{RelayServer, SessionToken},
-    signal_schema,
+    *,
 };
 
 #[tokio::main]
@@ -51,11 +50,7 @@ async fn main() {
     let worker_manager = WorkerManager::new();
     let mut worker_settings = WorkerSettings::default();
     worker_settings.log_level = WorkerLogLevel::Debug;
-    worker_settings.log_tags = vec![
-        WorkerLogTag::Sctp,
-        WorkerLogTag::Ice,
-        WorkerLogTag::Message,
-    ];
+    worker_settings.log_tags = vec![WorkerLogTag::Sctp, WorkerLogTag::Ice, WorkerLogTag::Message];
     let worker = worker_manager.create_worker(worker_settings).await.unwrap();
     let relay_server = RelayServer::new(worker, transport_listen_ip, media_codecs);
 
@@ -67,23 +62,18 @@ async fn main() {
         .and(async_graphql_warp::graphql_protocol())
         .map(
             move |ws: warp::ws::Ws, cookie_token: Option<String>, protocol| {
-                let schema = signal_schema.clone();
-                let relay_server = relay_server.clone();
-
-                let reply = ws.on_upgrade(move |websocket| async move {
-                    let relay_server_copy = relay_server.clone();
+                let reply = ws.on_upgrade(enclose! { (relay_server, signal_schema) move |websocket| async move {
                     // get token from cookie if it exists
                     let cookie_token = cookie_token.and_then(|cookie_token| {
                         serde_json::from_str::<SessionToken>(cookie_token.as_str()).ok()
                     });
-                    let selected_token: Arc<Mutex<Option<SessionToken>>> =
-                        Arc::new(Mutex::new(None));
-                    let selected_token_send = selected_token.clone();
+
+                    let (tx, rx) = oneshot::channel();
                     async_graphql_warp::graphql_subscription_upgrade_with_data(
                         websocket,
                         protocol,
-                        schema,
-                        move |value| async move {
+                        signal_schema,
+                        enclose! { (relay_server) move |value| async move {
                             let mut data = async_graphql::Data::default();
                             // get token from connection params if it exists
                             let param_token = value.get("token").and_then(|param_token| {
@@ -91,26 +81,23 @@ async fn main() {
                             });
                             let token = param_token.or(cookie_token);
                             if let Some(token) = token {
-                                let mut selected_token = selected_token_send.lock().unwrap();
-                                selected_token.replace(token);
                                 // create session from the selected token
                                 if let Some(weak_session) =
-                                    relay_server_copy.session_from_token(token)
+                                    relay_server.session_from_token(token)
                                 {
+                                    tx.send(token).unwrap();
                                     data.insert(weak_session);
                                 }
                             }
                             Ok(data)
-                        },
+                        }},
                     )
                     .await;
 
-                    // drop session on websocket close
-                    let mut selected_token = selected_token.lock().unwrap();
-                    if let Some(token) = selected_token.take() {
+                    if let Ok(token) = rx.await {
                         drop(relay_server.take_session_by_token(&token))
                     }
-                });
+                }});
                 warp::reply::with_header(
                     reply,
                     "Sec-WebSocket-Protocol",

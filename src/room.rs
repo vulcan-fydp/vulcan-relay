@@ -14,7 +14,7 @@ use tokio_stream::wrappers::BroadcastStream;
 
 use crate::session::{Session, SessionId, WeakSession};
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Display, Hash, Default)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Display, Hash, Default)]
 pub struct RoomId(Uuid);
 impl RoomId {
     pub fn new() -> Self {
@@ -22,16 +22,17 @@ impl RoomId {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Room {
     shared: Arc<Shared>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct WeakRoom {
     shared: Weak<Shared>,
 }
 
+#[derive(Debug)]
 struct Shared {
     state: Mutex<State>,
 
@@ -44,6 +45,7 @@ struct Shared {
     data_producer_available_tx: broadcast::Sender<DataProducerId>,
 }
 
+#[derive(Debug)]
 struct State {
     sessions: HashMap<SessionId, WeakSession>,
 }

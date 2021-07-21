@@ -23,7 +23,7 @@ use mediasoup::{
 use crate::relay_server::SessionOptions;
 use crate::room::Room;
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Display, Hash, Default)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Display, Hash, Default)]
 pub struct SessionId(Uuid);
 impl SessionId {
     pub fn new() -> Self {
@@ -31,16 +31,17 @@ impl SessionId {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Session {
     shared: Arc<Shared>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct WeakSession {
     shared: Weak<Shared>,
 }
 
+#[derive(Debug)]
 struct Shared {
     state: Mutex<State>,
 
@@ -57,6 +58,7 @@ impl PartialEq for Shared {
 }
 impl Eq for Shared {}
 
+#[derive(Debug)]
 struct State {
     client_rtp_capabilities: Option<RtpCapabilities>,
     consumers: HashMap<ConsumerId, Consumer>,

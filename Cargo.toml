@@ -13,7 +13,7 @@ build = "build.rs"
 mediasoup = "0.8"
 
 log = "0.4"
-env_logger = "0.8"
+env_logger = "0.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "0.8", features = ["serde", "v4"] }
@@ -39,9 +39,9 @@ tokio-local = { path = "third-party/tokio-local" }
 built = "0.5"
 
 [dev-dependencies]
-graphql_client = "0.9"
+graphql_client = "0.10"
 graphql-ws = { git = "https://github.com/Netdex/graphql-ws" }
-tokio-tungstenite = { version = "0.14", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.15", features = ["native-tls"] }
 native-tls = "0.2"
 http = "0.2"
 

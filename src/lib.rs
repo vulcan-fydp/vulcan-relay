@@ -1,3 +1,6 @@
+#[macro_use]
+pub mod util;
+
 pub mod cmdline;
 pub mod control_schema;
 pub mod relay_server;
