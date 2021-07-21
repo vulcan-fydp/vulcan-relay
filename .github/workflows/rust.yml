@@ -48,20 +48,20 @@ jobs:
           repository: "vulcan-fydp/schema"
           ref: master
           token: ${{ secrets.VULCAN_FYDP_CI_GH_PAT }}
-          path: "./backend-schema"
+          path: "./schema"
       - name: Dump schema
         if: github.event_name == 'push'
         run: |
-          cargo run --bin dump_control_schema > ./backend-schema/control_schema.gql
-          cargo run --bin dump_signal_schema > ./backend-schema/signal_schema.gql
+          cargo run --bin dump_control_schema > ./schema/control_schema.gql
+          cargo run --bin dump_signal_schema > ./schema/signal_schema.gql
       - name: Commit schema if changed
         if: github.event_name == 'push'
-        working-directory: ./backend-schema
+        working-directory: ./schema
         run: |
           if [[ `git status --porcelain` ]]; then
             cd ..
-            python ./backend-schema/update-version.py
-            cd backend-schema
+            python ./schema/update-version.py
+            cd schema
             VERSION=`cat ./version`
 
             git config user.email "vulcanfydp@gmail.com"
