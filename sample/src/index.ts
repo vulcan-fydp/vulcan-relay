@@ -195,12 +195,12 @@ let clientSub: SubscriptionClient | null = null;
     let client = getControlConnection();
     await client.query({
         query: gql`
-                query($fsid: ID!){
-                    stats(fsid: $fsid) 
+                query($sessionId: ID!){
+                    stats(sessionId: $sessionId) 
                 }
                 `,
         variables: {
-            fsid: clientId()
+            sessionId: clientId()
         }
     }).then(response => {
         let data = response.data.stats;
@@ -211,12 +211,12 @@ let clientSub: SubscriptionClient | null = null;
     let client = getControlConnection();
     await client.query({
         query: gql`
-                query($fsid: ID!){
-                    stats(fsid: $fsid) 
+                query($sessionId: ID!){
+                    stats(sessionId: $sessionId) 
                 }
                 `,
         variables: {
-            fsid: vulcastId()
+            sessionId: vulcastId()
         }
     }).then(response => {
         let data = response.data.stats;
@@ -224,7 +224,7 @@ let clientSub: SubscriptionClient | null = null;
     });
 }, false);
 
-// const canvas = document.querySelector('canvas') as HTMLCanvasElement;
+const canvas = document.querySelector('canvas') as HTMLCanvasElement;
 
 sendPreview.onloadedmetadata = () => {
     sendPreview.play();
@@ -463,34 +463,48 @@ async function session(role: Role, token: string) {
                     })
                 });
 
+                // ------------------ CAPTURE OUTPUT FROM WEBCAM/MICROPHONE ---------------------
                 // create a webcam/mic combo for testing (would be cap card output from Vulcast)
-                const mediaStream = await navigator.mediaDevices.getUserMedia({
-                    audio: true,
-                    video: {
-                        width: {
-                            ideal: 1270
-                        },
-                        height: {
-                            ideal: 720
-                        },
-                        frameRate: {
-                            ideal: 60
-                        }
-                    }
-                });
-                // const mediaStream = canvas.captureStream(0);
-                // var videoTrack = mediaStream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack;
-                // var ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
-                // function draw() {
-                //     ctx.fillStyle = "#000000";
-                //     ctx.fillRect(0, 0, 640, 480);
-                //     ctx.font = "30px Arial";
-                //     ctx.fillStyle = "#" + Math.floor(Math.random() * 16777215).toString(16);
-                //     ctx.fillText(new Date().getTime() + "", 10, 30);
-                //     videoTrack.requestFrame();
-                //     window.requestAnimationFrame(draw);
-                // }
-                // window.requestAnimationFrame(draw);
+                // const mediaStream = await navigator.mediaDevices.getUserMedia({
+                //     audio: true,
+                //     video: {
+                //         width: {
+                //             ideal: 1270
+                //         },
+                //         height: {
+                //             ideal: 720
+                //         },
+                //         frameRate: {
+                //             ideal: 60
+                //         }
+                //     }
+                // });
+                // ------------------------------------------------------------------------------
+
+                // --------------------- GENERATE OUTPUT PROGRAMMATICALLY --------------------
+                const mediaStream = canvas.captureStream(0);
+                var videoTrack = mediaStream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack;
+                var ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+                let rect = { x: 0, y: 0, w: 100, h: 100, vx: 5, vy: 2 };
+                function draw() {
+                    ctx.fillStyle = "#000000";
+                    ctx.fillRect(0, 0, 640, 480);
+                    ctx.font = "30px Arial";
+                    // ctx.fillStyle = "#" + Math.floor(Math.random() * 16777215).toString(16);
+                    ctx.fillStyle = "#ffffff";
+                    ctx.fillText(new Date().getTime() + "", 10, 30);
+                    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+                    // shitty physics simulation
+                    rect.x += rect.vx;
+                    rect.y += rect.vy;
+                    if (rect.x < 0 || rect.x + rect.w > canvas.width) rect.vx *= -1;
+                    if (rect.y < 0 || rect.y + rect.h > canvas.height) rect.vy *= -1;
+                    videoTrack.requestFrame();
+                    window.requestAnimationFrame(draw);
+                }
+                window.requestAnimationFrame(draw);
+                // -------------------------------------------------------------------------------
+
                 sendPreview.srcObject = mediaStream;
 
                 // create producers for each media track

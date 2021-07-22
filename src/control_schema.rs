@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use async_graphql::{Context, EmptySubscription, Object, Schema, SimpleObject, Union, ID};
 
 use crate::built_info;
@@ -5,7 +6,6 @@ use crate::relay_server::{
     ForeignRoomId, ForeignSessionId, RegisterRoomError, RegisterSessionError, RelayServer,
     SessionOptions, UnregisterRoomError, UnregisterSessionError,
 };
-use crate::util::LOCAL_POOL;
 
 #[derive(Default)]
 pub struct QueryRoot;
@@ -23,10 +23,12 @@ impl QueryRoot {
     }
 
     /// Get various statistics for a session.
-    async fn stats(&self, ctx: &Context<'_>, fsid: ID) -> Option<String> {
+    async fn stats(&self, ctx: &Context<'_>, session_id: ID) -> Result<String, anyhow::Error> {
         let relay_server = ctx.data_unchecked::<RelayServer>();
-        let session = relay_server.get_session(&ForeignSessionId::from(fsid))?;
-        serde_json::to_string(&session.get_stats(&LOCAL_POOL).await).ok()
+        let session = relay_server
+            .get_session(&ForeignSessionId::from(session_id))
+            .ok_or_else(|| anyhow!("unknown fsid"))?;
+        Ok(serde_json::to_string(&session.get_stats().await?)?)
     }
 }
 

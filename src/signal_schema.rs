@@ -2,11 +2,10 @@ use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 
 use anyhow::anyhow;
-use async_graphql::{scalar, Context, Object, Result, Schema, Subscription};
+use async_graphql::{guard::Guard, scalar, Context, Object, Result, Schema, Subscription};
 use mediasoup::transport::Transport;
 
-use crate::session::{Session, WeakSession};
-use crate::util::LOCAL_POOL;
+use crate::session::{Resource, Session, WeakSession};
 
 fn session_from_ctx(ctx: &Context<'_>) -> Result<Session, anyhow::Error> {
     ctx.data_opt::<WeakSession>()
@@ -42,6 +41,11 @@ impl MutationRoot {
     }
 
     /// WebRTC transport parameters.
+    #[graphql(guard(ResourceGuard(
+        resource = "Resource::WebrtcTransport",
+        expected = r#"1usize"#,
+        limit = r#"2usize"#
+    )))]
     async fn create_webrtc_transport(&self, ctx: &Context<'_>) -> Result<WebRtcTransportOptions> {
         let session = session_from_ctx(ctx)?;
         let transport = session.create_webrtc_transport().await;
@@ -54,6 +58,11 @@ impl MutationRoot {
         })
     }
     /// Plain receive transport connection parameters.
+    #[graphql(guard(ResourceGuard(
+        resource = "Resource::PlainTransport",
+        expected = r#"1usize"#,
+        limit = r#"2usize"#
+    )))]
     async fn create_plain_transport(&self, ctx: &Context<'_>) -> Result<PlainTransportOptions> {
         let session = session_from_ctx(ctx)?;
         let plain_transport = session.create_plain_transport().await;
@@ -79,6 +88,11 @@ impl MutationRoot {
     }
 
     /// Request consumption of media stream.
+    #[graphql(guard(ResourceGuard(
+        resource = "Resource::Consumer",
+        expected = r#"1usize"#,
+        limit = r#"2usize"#
+    )))]
     async fn consume(
         &self,
         ctx: &Context<'_>,
@@ -86,9 +100,7 @@ impl MutationRoot {
         producer_id: ProducerId,
     ) -> Result<ConsumerOptions> {
         let session = session_from_ctx(ctx)?;
-        let consumer = session
-            .consume(&LOCAL_POOL, transport_id.0, producer_id.0)
-            .await?;
+        let consumer = session.consume(transport_id.0, producer_id.0).await?;
         Ok(ConsumerOptions {
             id: consumer.id(),
             kind: consumer.kind(),
@@ -105,6 +117,11 @@ impl MutationRoot {
     }
 
     /// Request production of media stream.
+    #[graphql(guard(ResourceGuard(
+        resource = "Resource::Producer",
+        expected = r#"1usize"#,
+        limit = r#"2usize"#
+    )))]
     async fn produce(
         &self,
         ctx: &Context<'_>,
@@ -115,13 +132,18 @@ impl MutationRoot {
         let session = session_from_ctx(ctx)?;
         Ok(ProducerId(
             session
-                .produce(&LOCAL_POOL, transport_id.0, kind.0, rtp_parameters.0)
+                .produce(transport_id.0, kind.0, rtp_parameters.0)
                 .await?
                 .id(),
         ))
     }
 
     /// Request production of a media stream on plain transport.
+    #[graphql(guard(ResourceGuard(
+        resource = "Resource::Producer",
+        expected = r#"1usize"#,
+        limit = r#"2usize"#
+    )))]
     async fn produce_plain(
         &self,
         ctx: &Context<'_>,
@@ -132,13 +154,18 @@ impl MutationRoot {
         let session = session_from_ctx(ctx)?;
         Ok(ProducerId(
             session
-                .produce_plain(&LOCAL_POOL, transport_id.0, kind.0, rtp_parameters.0)
+                .produce_plain(transport_id.0, kind.0, rtp_parameters.0)
                 .await?
                 .id(),
         ))
     }
 
     /// Request consumption of data stream.
+    #[graphql(guard(ResourceGuard(
+        resource = "Resource::DataConsumer",
+        expected = r#"1usize"#,
+        limit = r#"2usize"#
+    )))]
     async fn consume_data(
         &self,
         ctx: &Context<'_>,
@@ -147,7 +174,7 @@ impl MutationRoot {
     ) -> Result<DataConsumerOptions> {
         let session = ctx.data_unchecked::<WeakSession>().upgrade().unwrap();
         let data_consumer = session
-            .consume_data(&LOCAL_POOL, transport_id.0, data_producer_id.0)
+            .consume_data(transport_id.0, data_producer_id.0)
             .await?;
         Ok(DataConsumerOptions {
             id: data_consumer.id(),
@@ -157,6 +184,11 @@ impl MutationRoot {
     }
 
     /// Request production of data stream.
+    #[graphql(guard(ResourceGuard(
+        resource = "Resource::DataProducer",
+        expected = r#"1usize"#,
+        limit = r#"2usize"#
+    )))]
     async fn produce_data(
         &self,
         ctx: &Context<'_>,
@@ -166,7 +198,7 @@ impl MutationRoot {
         let session = session_from_ctx(ctx)?;
         Ok(DataProducerId(
             session
-                .produce_data(&LOCAL_POOL, transport_id.0, sctp_stream_parameters.0)
+                .produce_data(transport_id.0, sctp_stream_parameters.0)
                 .await?
                 .id(),
         ))
@@ -197,12 +229,39 @@ impl SubscriptionRoot {
     }
 }
 
+struct ResourceGuard {
+    /// Name of resource to enforce limits for.
+    resource: Resource,
+    /// Expected count of this resource allocated as a result of this operation.
+    expected: usize,
+    /// Maximum allowable count of this resource.
+    limit: usize,
+}
+#[async_trait::async_trait]
+impl Guard for ResourceGuard {
+    async fn check(&self, ctx: &Context<'_>) -> Result<()> {
+        let session = session_from_ctx(ctx)?;
+        if session.get_resource_count(&self.resource) + self.expected <= self.limit {
+            Ok(())
+        } else {
+            Err(format!(
+                "resource limit of {} exceeded (max {})",
+                self.resource, self.limit
+            )
+            .into())
+        }
+    }
+}
+
 pub type SignalSchema = Schema<QueryRoot, MutationRoot, SubscriptionRoot>;
 
 pub fn schema() -> SignalSchema {
     SignalSchema::build(QueryRoot, MutationRoot, SubscriptionRoot).finish()
 }
 
+// TODO all UUID based types need to be migrated to either:
+// - accept ID instead of scalar type (lose type safety)
+// - manually serialize as String rather than UUID
 #[derive(Deserialize, Serialize, Clone, Copy)]
 #[serde(transparent)]
 struct TransportId(mediasoup::transport::TransportId);

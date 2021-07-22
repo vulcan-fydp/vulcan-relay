@@ -6,11 +6,8 @@ edition = "2018"
 default-run = "vulcan-relay"
 build = "build.rs"
 
-# [patch.crates-io]
-# mediasoup = { git = "https://github.com/versatica/mediasoup", branch = "v3" }
-
 [dependencies]
-mediasoup = "0.8"
+mediasoup = { version = "0.8", git = "https://github.com/netdex/mediasoup", branch = "rust-async-trait-send" }
 
 log = "0.4"
 env_logger = "0.9"
@@ -23,7 +20,6 @@ anyhow = "1.0"
 clap = "3.0.0-beta.2"
 bimap = "0.6.1"
 derive_more = "0.99.0"
-lazy_static = "1.4.0"
 
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
@@ -35,8 +31,6 @@ warp = { version = "0.3", features = ["tls"] }
 async-graphql = "~2.8"
 async-graphql-warp = "~2.8"
 
-tokio-local = { path = "third-party/tokio-local" }
-
 [build-dependencies]
 built = "0.5"
 
@@ -46,6 +40,3 @@ graphql-ws = { version = "0.3", git = "https://github.com/Netdex/graphql-ws" }
 tokio-tungstenite = { version = "0.15", features = ["native-tls"] }
 native-tls = "0.2"
 http = "0.2"
-
-[workspace]
-members = ["third-party/tokio-local"]

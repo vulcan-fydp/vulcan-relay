@@ -7,7 +7,7 @@ use uuid::Uuid;
 use anyhow::{anyhow, Result};
 use derive_more::Display;
 use mediasoup::{
-    consumer::{Consumer, ConsumerId, ConsumerOptions, ConsumerStat, ConsumerStats},
+    consumer::{Consumer, ConsumerId, ConsumerOptions, ConsumerStat},
     data_consumer::{DataConsumer, DataConsumerId, DataConsumerOptions, DataConsumerStat},
     data_producer::{DataProducer, DataProducerId, DataProducerOptions, DataProducerStat},
     data_structures::{DtlsParameters, TransportListenIp},
@@ -120,7 +120,6 @@ impl Session {
     /// Create a local consumer on the receive WebRTC transport.
     pub async fn consume(
         &self,
-        local_pool: &tokio_local::LocalPoolHandle,
         transport_id: TransportId,
         producer_id: ProducerId,
     ) -> Result<Consumer> {
@@ -136,10 +135,7 @@ impl Session {
         let mut options = ConsumerOptions::new(producer_id, rtp_capabilities);
         options.paused = true;
 
-        let consumer = local_pool
-            .spawn_pinned(|| async move { transport.consume(options).await })
-            .await
-            .unwrap()?;
+        let consumer = transport.consume(options).await?;
 
         log::trace!("+consumer {} (session {})", consumer.id(), self.id());
         self.add_consumer(consumer.clone());
@@ -157,7 +153,6 @@ impl Session {
     /// Create a local producer on the send WebRTC transport.
     pub async fn produce(
         &self,
-        local_pool: &tokio_local::LocalPoolHandle,
         transport_id: TransportId,
         kind: MediaKind,
         rtp_parameters: RtpParameters,
@@ -165,14 +160,9 @@ impl Session {
         let transport = self
             .get_webrtc_transport(transport_id)
             .ok_or_else(|| anyhow!("transport does not exist"))?;
-        let producer = local_pool
-            .spawn_pinned(move || async move {
-                transport
-                    .produce(ProducerOptions::new(kind, rtp_parameters))
-                    .await
-            })
-            .await
-            .unwrap()?;
+        let producer = transport
+            .produce(ProducerOptions::new(kind, rtp_parameters))
+            .await?;
         self.add_producer(producer.clone());
 
         log::trace!("+producer {} (session {})", producer.id(), self.id());
@@ -182,7 +172,6 @@ impl Session {
 
     pub async fn produce_plain(
         &self,
-        local_pool: &tokio_local::LocalPoolHandle,
         transport_id: TransportId,
         kind: MediaKind,
         rtp_parameters: RtpParameters,
@@ -191,14 +180,9 @@ impl Session {
             .get_plain_transport(transport_id)
             .ok_or_else(|| anyhow!("plain transport does not exist"))?;
 
-        let producer = local_pool
-            .spawn_pinned(move || async move {
-                transport
-                    .produce(ProducerOptions::new(kind, rtp_parameters))
-                    .await
-            })
-            .await
-            .unwrap()?;
+        let producer = transport
+            .produce(ProducerOptions::new(kind, rtp_parameters))
+            .await?;
         self.add_producer(producer.clone());
 
         log::trace!(
@@ -212,7 +196,6 @@ impl Session {
     /// Create a local data consumer on the receive WebRTC transport.
     pub async fn consume_data(
         &self,
-        local_pool: &tokio_local::LocalPoolHandle,
         transport_id: TransportId,
         data_producer_id: DataProducerId,
     ) -> Result<DataConsumer> {
@@ -221,10 +204,7 @@ impl Session {
             .ok_or_else(|| anyhow!("transport does not exist"))?;
         let options = DataConsumerOptions::new_sctp(data_producer_id);
 
-        let data_consumer = local_pool
-            .spawn_pinned(|| async move { transport.consume_data(options).await })
-            .await
-            .unwrap()?;
+        let data_consumer = transport.consume_data(options).await?;
 
         log::trace!(
             "+data consumer {} (session {})",
@@ -238,21 +218,15 @@ impl Session {
     /// Create a local data producer on the send WebRTC transport.
     pub async fn produce_data(
         &self,
-        local_pool: &tokio_local::LocalPoolHandle,
         transport_id: TransportId,
         sctp_stream_parameters: SctpStreamParameters,
     ) -> Result<DataProducer> {
         let transport = self
             .get_webrtc_transport(transport_id)
             .ok_or_else(|| anyhow!("transport does not exist"))?;
-        let data_producer = local_pool
-            .spawn_pinned(move || async move {
-                transport
-                    .produce_data(DataProducerOptions::new_sctp(sctp_stream_parameters))
-                    .await
-            })
-            .await
-            .unwrap()?;
+        let data_producer = transport
+            .produce_data(DataProducerOptions::new_sctp(sctp_stream_parameters))
+            .await?;
 
         self.add_data_producer(data_producer.clone());
 
@@ -270,68 +244,72 @@ impl Session {
     /// Get aggregation of all stats related to this session.
     /// Is quite computationally expensive to produce.
     #[allow(clippy::eval_order_dependence)]
-    pub async fn get_stats(&self, local_pool: &tokio_local::LocalPoolHandle) -> Stats {
+    pub async fn get_stats(&self) -> Result<Stats, mediasoup::worker::RequestError> {
         let consumers = self.get_consumers();
         let producers = self.get_producers();
         let data_consumers = self.get_data_consumers();
         let data_producers = self.get_data_producers();
         let webrtc_transports = self.get_webrtc_transports();
         let plain_transports = self.get_plain_transports();
-        local_pool
-            .spawn_pinned(move || async move {
-                Stats {
-                    consumer_stats: stream::iter(consumers)
-                        .then(|consumer| async move {
-                            (
-                                consumer.id(),
-                                match consumer.get_stats().await.unwrap() {
-                                    ConsumerStats::JustConsumer((c,))
-                                    | ConsumerStats::WithProducer((c, _)) => c,
-                                },
-                            )
-                        })
-                        .collect::<HashMap<_, _>>()
-                        .await,
-                    producer_stats: stream::iter(producers)
-                        .then(|producer| async move {
-                            (producer.id(), producer.get_stats().await.unwrap())
-                        })
-                        .collect::<HashMap<_, _>>()
-                        .await,
-                    data_consumer_stats: stream::iter(data_consumers)
-                        .then(|data_consumer| async move {
-                            (data_consumer.id(), data_consumer.get_stats().await.unwrap())
-                        })
-                        .collect::<HashMap<_, _>>()
-                        .await,
-                    data_producer_stats: stream::iter(data_producers)
-                        .then(|data_producer| async move {
-                            (data_producer.id(), data_producer.get_stats().await.unwrap())
-                        })
-                        .collect::<HashMap<_, _>>()
-                        .await,
-                    webrtc_transport_stats: stream::iter(webrtc_transports)
-                        .then(|webrtc_transport| async move {
-                            (
-                                webrtc_transport.id(),
-                                webrtc_transport.get_stats().await.unwrap(),
-                            )
-                        })
-                        .collect::<HashMap<_, _>>()
-                        .await,
-                    plain_transport_stats: stream::iter(plain_transports)
-                        .then(|plain_transport| async move {
-                            (
-                                plain_transport.id(),
-                                plain_transport.get_stats().await.unwrap(),
-                            )
-                        })
-                        .collect::<HashMap<_, _>>()
-                        .await,
-                }
+
+        let consumer_stats = stream::iter(consumers)
+            .filter_map(|consumer| async move {
+                let id = consumer.id();
+                let stats = consumer.get_stats().await.ok()?.consumer_stats().clone();
+                Some((id, stats))
             })
-            .await
-            .unwrap()
+            .collect::<HashMap<_, _>>()
+            .await;
+
+        let producer_stats = stream::iter(producers)
+            .filter_map(|producer| async move {
+                let id = producer.id();
+                let stats = producer.get_stats().await.ok()?;
+                Some((id, stats))
+            })
+            .collect::<HashMap<_, _>>()
+            .await;
+        let data_consumer_stats = stream::iter(data_consumers)
+            .filter_map(|data_consumer| async move {
+                let id = data_consumer.id();
+                let stats = data_consumer.get_stats().await.ok()?;
+                Some((id, stats))
+            })
+            .collect::<HashMap<_, _>>()
+            .await;
+        let data_producer_stats = stream::iter(data_producers)
+            .filter_map(|data_producer| async move {
+                let id = data_producer.id();
+                let stats = data_producer.get_stats().await.ok()?;
+                Some((id, stats))
+            })
+            .collect::<HashMap<_, _>>()
+            .await;
+        let webrtc_transport_stats = stream::iter(webrtc_transports)
+            .filter_map(|transport| async move {
+                let id = transport.id();
+                let stats = transport.get_stats().await.ok()?;
+                Some((id, stats))
+            })
+            .collect::<HashMap<_, _>>()
+            .await;
+        let plain_transport_stats = stream::iter(plain_transports)
+            .filter_map(|transport| async move {
+                let id = transport.id();
+                let stats = transport.get_stats().await.ok()?;
+                Some((id, stats))
+            })
+            .collect::<HashMap<_, _>>()
+            .await;
+
+        Ok::<Stats, mediasoup::worker::RequestError>(Stats {
+            consumer_stats,
+            producer_stats,
+            data_consumer_stats,
+            data_producer_stats,
+            webrtc_transport_stats,
+            plain_transport_stats,
+        })
     }
 
     pub fn id(&self) -> SessionId {
@@ -486,6 +464,34 @@ impl Session {
             .cloned()
             .collect::<Vec<DataConsumer>>()
     }
+
+    pub fn get_resource_count(&self, resource: &Resource) -> usize {
+        let state = self.shared.state.lock().unwrap();
+        match resource {
+            Resource::Consumer => state.consumers.values().filter(|x| !x.closed()).count(),
+            Resource::Producer => state.producers.values().filter(|x| !x.closed()).count(),
+            Resource::DataConsumer => state
+                .data_consumers
+                .values()
+                .filter(|x| !x.closed())
+                .count(),
+            Resource::DataProducer => state
+                .data_producers
+                .values()
+                .filter(|x| !x.closed())
+                .count(),
+            Resource::WebrtcTransport => state
+                .webrtc_transports
+                .values()
+                .filter(|x| !x.closed())
+                .count(),
+            Resource::PlainTransport => state
+                .plain_transports
+                .values()
+                .filter(|x| !x.closed())
+                .count(),
+        }
+    }
 }
 impl WeakSession {
     pub fn upgrade(&self) -> Option<Session> {
@@ -508,4 +514,14 @@ pub struct Stats {
     data_producer_stats: HashMap<DataProducerId, Vec<DataProducerStat>>,
     webrtc_transport_stats: HashMap<TransportId, Vec<WebRtcTransportStat>>,
     plain_transport_stats: HashMap<TransportId, Vec<PlainTransportStat>>,
+}
+
+#[derive(Debug, Clone, Display)]
+pub enum Resource {
+    Consumer,
+    Producer,
+    DataConsumer,
+    DataProducer,
+    WebrtcTransport,
+    PlainTransport,
 }

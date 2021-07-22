@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /usr/src/vulcan-relay
 RUN USER=root cargo init
 COPY Cargo.toml Cargo.lock build.rs ./
-COPY third-party ./third-party
+# COPY third-party ./third-party
 RUN cargo build --release
 
 # build vulcan-relay
