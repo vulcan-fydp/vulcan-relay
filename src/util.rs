@@ -7,4 +7,3 @@ macro_rules! enclose {
         }
     };
 }
-
