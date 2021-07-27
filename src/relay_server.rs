@@ -140,20 +140,24 @@ impl RelayServer {
         match state.registered_sessions.remove_by_left(&fsid) {
             Some(_) => {
                 let session_options = state.session_options.remove(&fsid).unwrap();
+                // this code is a deadlock nightmare so don't touch it
                 match session_options {
                     SessionOptions::Vulcast => {
                         // if we are a vulcast in a room, also nuke the room
                         if let Some(frid) = state.registered_rooms.get_by_right(&fsid).cloned() {
                             drop(state);
                             self.unregister_room(frid).unwrap();
+                            drop(self.take_session(&fsid));
+                        } else {
+                            drop(state);
+                            drop(self.take_session(&fsid));
                         }
                     }
                     SessionOptions::WebClient(_) | SessionOptions::Host(_) => {
                         drop(state);
+                        drop(self.take_session(&fsid));
                     }
                 }
-                // nuke any active connections by dropping phy session
-                drop(self.take_session(&fsid));
                 log::trace!("-foreign session {} [{:?}]", &fsid, session_options);
                 Ok(())
             }
