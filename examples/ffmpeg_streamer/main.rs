@@ -139,7 +139,11 @@ async fn main() -> Result<(), anyhow::Error> {
                     mime_type: MimeTypeVideo::H264,
                     payload_type: 102,
                     clock_rate: NonZeroU32::new(90000).unwrap(),
-                    parameters: RtpCodecParametersParameters::default(),
+                    parameters: RtpCodecParametersParameters::from([
+                        ("packetization-mode", 1u32.into()),
+                        ("level-asymmetry-allowed", 1u32.into()),
+                        ("profile-level-id", "42e01f".into()),
+                    ]),
                     rtcp_feedback: vec![],
                 }],
                 encodings: vec![RtpEncodingParameters {
