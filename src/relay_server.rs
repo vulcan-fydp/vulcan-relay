@@ -150,10 +150,10 @@ impl RelayServer {
                     }
                     SessionOptions::WebClient(_) | SessionOptions::Host(_) => {
                         drop(state);
-                        // nuke any active connections by dropping phy session
-                        drop(self.take_session(&fsid));
                     }
                 }
+                // nuke any active connections by dropping phy session
+                drop(self.take_session(&fsid));
                 log::trace!("-foreign session {} [{:?}]", &fsid, session_options);
                 Ok(())
             }
