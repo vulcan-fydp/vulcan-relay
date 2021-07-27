@@ -295,6 +295,7 @@ async function session(role: Role, token: string) {
                     rtpCapabilities: device.rtpCapabilities
                 }
             });
+            console.log(role, "rtp caps", device.rtpCapabilities);
 
             async function createWebrtcTransport() {
                 return (await client.mutate({
