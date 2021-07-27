@@ -31,6 +31,9 @@ pub struct Opts {
     /// Pre-authorized access token.
     #[clap(short, long)]
     pub token: String,
+    /// Disable TLS.
+    #[clap(long)]
+    pub no_tls: bool,
 }
 
 #[tokio::main]
@@ -61,7 +64,11 @@ async fn main() -> Result<(), anyhow::Error> {
         req,
         stream,
         None,
-        Some(Connector::NativeTls(connector)),
+        Some(if opts.no_tls {
+            Connector::Plain
+        } else {
+            Connector::NativeTls(connector)
+        }),
     )
     .await?;
 
