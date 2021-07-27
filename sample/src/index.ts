@@ -339,6 +339,17 @@ async function session(role: Role, token: string) {
                 console.log(role, "connected recv transport");
                 success();
             });
+            // client state update subscription test
+            client.subscribe({
+                query: gql`
+                subscription {
+                    clientStateAvailable{update, name, sessionId}
+                }
+                `
+            }).subscribe((result: FetchResult<Record<string, any>>) => {
+                // callback is called when new producer is available
+                console.log(role, "CLIENT STATE UPDATE", result)
+            })
             return { sendTransport, recvTransport }
         });
 
