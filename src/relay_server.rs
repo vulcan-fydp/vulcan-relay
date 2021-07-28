@@ -10,7 +10,7 @@ use mediasoup::{rtp_parameters::RtpCodecCapability, worker::Worker};
 use thiserror::Error;
 
 use crate::room::{Room, WeakRoom};
-use crate::session::{Session, WeakSession};
+use crate::session::Session;
 
 #[derive(Clone)]
 pub struct RelayServer {
@@ -189,7 +189,7 @@ impl RelayServer {
     }
 
     /// Create PHY session from session token, obtained via registration.
-    pub fn session_from_token(&self, token: SessionToken) -> Option<WeakSession> {
+    pub fn session_from_token(&self, token: SessionToken) -> Option<Session> {
         let mut state = self.shared.state.lock().unwrap();
 
         // find fsid corresponding to this session token
@@ -226,7 +226,7 @@ impl RelayServer {
 
         // store owning session
         state.sessions.insert(foreign_session_id, session.clone());
-        Some(session.downgrade())
+        Some(session)
     }
 
     /// Get all client sessions in the given room, specified by FRID.

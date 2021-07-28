@@ -82,11 +82,11 @@ async fn main() {
                             let token = param_token.or(cookie_token);
                             if let Some(token) = token {
                                 // create session from the selected token
-                                if let Some(weak_session) =
+                                if let Some(session) =
                                     relay_server.session_from_token(token)
                                 {
                                     tx.send(token).unwrap();
-                                    data.insert(weak_session);
+                                    data.insert(session.downgrade());
                                 }
                             }
                             Ok(data)

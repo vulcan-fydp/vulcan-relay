@@ -21,8 +21,6 @@ async fn producer_consumer_connected_after_signalling() {
                 .register_session(vulcast_session_id.clone(), SessionOptions::Vulcast)
                 .unwrap(),
         )
-        .unwrap()
-        .upgrade()
         .unwrap();
     relay_server
         .register_room(foreign_room_id, vulcast_session_id)
@@ -36,8 +34,6 @@ async fn producer_consumer_connected_after_signalling() {
                 )
                 .unwrap(),
         )
-        .unwrap()
-        .upgrade()
         .unwrap();
 
     let vulcast_send_transport = vulcast.create_webrtc_transport().await;
