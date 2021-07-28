@@ -179,7 +179,8 @@ async fn main() -> Result<(), anyhow::Error> {
         "-stream_loop", "-1", 
         "-i", &opts.file, 
         "-map", "0:v:0", 
-        "-c:v", "copy", 
+        "-c:v", "copy",
+        // "-c:v", "libx264", "-profile:v", "high", "-level:v", "4.0", "-pix_fmt" ,"yuv420p", "-g", "50", "-tune", "zerolatency",
         "-map", "0:a:0",
         "-c:a", "copy", 
         "-f", "tee",
@@ -187,7 +188,8 @@ async fn main() -> Result<(), anyhow::Error> {
             audio_transport_options.tuple.local_ip(),
             audio_transport_options.tuple.local_port(),
             video_transport_options.tuple.local_ip(),
-            video_transport_options.tuple.local_port())]).spawn()?;
+            video_transport_options.tuple.local_port())
+    ]).spawn()?;
 
     ffmpeg.wait()?;
 

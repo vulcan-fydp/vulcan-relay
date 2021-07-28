@@ -5,7 +5,7 @@ use std::num::{NonZeroU32, NonZeroU8};
 
 use async_graphql::http::{playground_source, GraphQLPlaygroundConfig};
 use clap::Clap;
-use mediasoup::worker::{WorkerLogLevel, WorkerLogTag};
+use mediasoup::worker::WorkerLogLevel;
 use mediasoup::{
     data_structures::TransportListenIp,
     rtp_parameters::{
@@ -50,7 +50,7 @@ async fn main() {
     let worker_manager = WorkerManager::new();
     let mut worker_settings = WorkerSettings::default();
     worker_settings.log_level = WorkerLogLevel::Debug;
-    worker_settings.log_tags = vec![WorkerLogTag::Sctp, WorkerLogTag::Ice, WorkerLogTag::Message];
+    worker_settings.log_tags = opts.log_tags.into_iter().map(|x| x.0).collect();
     let worker = worker_manager.create_worker(worker_settings).await.unwrap();
     let relay_server = RelayServer::new(worker, transport_listen_ip, media_codecs);
 

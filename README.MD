@@ -78,7 +78,6 @@ Client Session ID: 1
 6. Connect Client
 
 ## Debugging
-To dump all relevant logs and backtrace on crashes, set the following envvars:
 ```
-RUST_LOG=vulcan_relay=trace,mediasoup=trace RUST_BACKTRACE=1 ./vulcan-relay ...
+RUST_LOG=vulcan_relay=trace,mediasoup=debug RUST_BACKTRACE=1 ./vulcan-relay ... -log-tags info message rtcp rtp rtx sctp srtp
 ```
