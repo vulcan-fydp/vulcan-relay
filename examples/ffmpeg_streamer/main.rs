@@ -1,6 +1,6 @@
 use serde::Serialize;
-use std::io::Read;
 use std::num::{NonZeroU32, NonZeroU8};
+use std::process::Command;
 
 use clap::{AppSettings, Clap};
 use futures::StreamExt;
@@ -34,6 +34,9 @@ pub struct Opts {
     /// Disable TLS.
     #[clap(long)]
     pub no_tls: bool,
+    /// File to stream, copied verbatim without re-encoding.
+    #[clap(long)]
+    pub file: String,
 }
 
 #[tokio::main]
@@ -142,7 +145,7 @@ async fn main() -> Result<(), anyhow::Error> {
                     parameters: RtpCodecParametersParameters::from([
                         ("packetization-mode", 1u32.into()),
                         ("level-asymmetry-allowed", 1u32.into()),
-                        ("profile-level-id", "42e01f".into()),
+                        ("profile-level-id", "64002a".into()),
                     ]),
                     rtcp_feedback: vec![],
                 }],
@@ -170,8 +173,23 @@ async fn main() -> Result<(), anyhow::Error> {
         }
     });
 
-    println!("Press Enter to end session...");
-    let _ = std::io::stdin().read(&mut [0u8]).unwrap();
+    let mut ffmpeg = Command::new("ffmpeg").args(&[
+        "-re", 
+        "-fflags", "+genpts", 
+        "-stream_loop", "-1", 
+        "-i", &opts.file, 
+        "-map", "0:v:0", 
+        "-c:v", "copy", 
+        "-map", "0:a:0",
+        "-c:a", "copy", 
+        "-f", "tee",
+        &format!("[select=a:f=rtp:ssrc=11111111:payload_type=101]rtp://{}:{}|[select=v:f=rtp:ssrc=22222222:payload_type=102]rtp://{}:{}",
+            audio_transport_options.tuple.local_ip(),
+            audio_transport_options.tuple.local_port(),
+            video_transport_options.tuple.local_ip(),
+            video_transport_options.tuple.local_port())]).spawn()?;
+
+    ffmpeg.wait()?;
 
     Ok(())
 }
