@@ -207,6 +207,23 @@ fn media_codecs() -> Vec<RtpCodecCapability> {
             ],
         },
         RtpCodecCapability::Video {
+            mime_type: MimeTypeVideo::H264,
+            preferred_payload_type: None,
+            clock_rate: NonZeroU32::new(90000).unwrap(),
+            parameters: RtpCodecParametersParameters::from([
+                ("packetization-mode", 1u32.into()),
+                ("level-asymmetry-allowed", 1u32.into()),
+                ("profile-level-id", "64002a".into()),
+            ]),
+            rtcp_feedback: vec![
+                RtcpFeedback::Nack,
+                RtcpFeedback::NackPli,
+                RtcpFeedback::CcmFir,
+                RtcpFeedback::GoogRemb,
+                RtcpFeedback::TransportCc,
+            ],
+        },
+        RtpCodecCapability::Video {
             mime_type: MimeTypeVideo::Vp8,
             preferred_payload_type: None,
             clock_rate: NonZeroU32::new(90000).unwrap(),
