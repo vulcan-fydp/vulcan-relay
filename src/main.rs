@@ -42,7 +42,7 @@ async fn main() {
     let opts: Opts = Opts::parse();
 
     let rtc_ip: IpAddr = opts.rtc_ip.parse().unwrap();
-    let announced_ip = opts.rtc_announce_ip.and_then(|x| Some(x.parse().unwrap()));
+    let announced_ip = opts.rtc_announce_ip.map(|x| x.parse().unwrap());
     log::info!("rtc ip: {}, rtc announce ip: {:?}", &rtc_ip, &announced_ip);
 
     let transport_listen_ip = TransportListenIp {
@@ -112,15 +112,13 @@ async fn main() {
 
     let mut cors = warp::cors();
     // TODO force adoption after updating documentation
-    if opts.no_cors || true {
-        log::warn!(
-            "disabling CORS for control endpoint (in the future, --no-cors will be required)"
-        );
-        cors = cors
-            .allow_any_origin()
-            .allow_headers(vec!["content-type"])
-            .allow_methods(vec!["POST"]);
-    }
+    // if opts.no_cors {
+    log::warn!("disabling CORS for control endpoint (in the future, --no-cors will be required)");
+    cors = cors
+        .allow_any_origin()
+        .allow_headers(vec!["content-type"])
+        .allow_methods(vec!["POST"]);
+    // }
 
     let graphql_control_post = async_graphql_warp::graphql(control_schema.clone())
         .and_then(
