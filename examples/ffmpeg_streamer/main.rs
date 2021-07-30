@@ -145,7 +145,7 @@ async fn main() -> Result<(), anyhow::Error> {
                     parameters: RtpCodecParametersParameters::from([
                         ("packetization-mode", 1u32.into()),
                         ("level-asymmetry-allowed", 1u32.into()),
-                        ("profile-level-id", "64002a".into()),
+                        ("profile-level-id", "4d0032".into()),
                     ]),
                     rtcp_feedback: vec![],
                 }],
