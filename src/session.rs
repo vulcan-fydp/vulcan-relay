@@ -1,4 +1,5 @@
 use futures::{stream, StreamExt};
+use mediasoup::producer::ProducerTraceEventType;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
@@ -190,6 +191,19 @@ impl Session {
             producer.id(),
             self.id()
         );
+
+        // remove this later
+        if kind == MediaKind::Video {
+            self.trace_producer(
+                producer.id(),
+                vec![
+                    ProducerTraceEventType::Rtp,
+                    ProducerTraceEventType::KeyFrame,
+                ],
+            )
+            .await;
+        }
+
         Ok(producer)
     }
 
@@ -422,6 +436,10 @@ impl Session {
         self.get_room().announce_producer(producer.id());
         state.producers.insert(producer.id(), producer);
     }
+    pub fn get_producer(&self, id: ProducerId) -> Option<Producer> {
+        let state = self.shared.state.lock().unwrap();
+        state.producers.get(&id).cloned()
+    }
     pub fn remove_producer(&self, producer: &Producer) {
         let mut state = self.shared.state.lock().unwrap();
         let _ = state.producers.remove(&producer.id()).unwrap();
@@ -465,6 +483,7 @@ impl Session {
             .collect::<Vec<DataConsumer>>()
     }
 
+    /// Get the count of a limited resource.
     pub fn get_resource_count(&self, resource: &Resource) -> usize {
         let state = self.shared.state.lock().unwrap();
         match resource {
@@ -491,6 +510,22 @@ impl Session {
                 .filter(|x| !x.closed())
                 .count(),
         }
+    }
+
+    /// Enable detailed tracing for a specific producer. Use with caution.
+    pub async fn trace_producer(
+        &self,
+        producer_id: ProducerId,
+        events: Vec<ProducerTraceEventType>,
+    ) {
+        log::warn!("tracing enabled for {:?}", producer_id);
+        let producer = self.get_producer(producer_id).unwrap();
+        producer
+            .on_trace(move |data| {
+                log::trace!("{:?}: {:#?}", producer_id, data);
+            })
+            .detach();
+        producer.enable_trace_event(events).await.unwrap();
     }
 }
 impl WeakSession {
