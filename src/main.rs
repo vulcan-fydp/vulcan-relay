@@ -1,6 +1,6 @@
 use futures::future;
 use std::convert::Infallible;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::num::{NonZeroU32, NonZeroU8};
 
 use async_graphql::http::{playground_source, GraphQLPlaygroundConfig};
@@ -41,9 +41,13 @@ async fn main() {
 
     let opts: Opts = Opts::parse();
 
+    let rtc_ip: IpAddr = opts.rtc_ip.parse().unwrap();
+    let announced_ip = opts.rtc_announce_ip.and_then(|x| Some(x.parse().unwrap()));
+    log::info!("rtc ip: {}, rtc announce ip: {:?}", &rtc_ip, &announced_ip);
+
     let transport_listen_ip = TransportListenIp {
-        ip: opts.rtc_ip.parse().unwrap(),
-        announced_ip: opts.rtc_announce_ip.and_then(|x| x.parse().ok()),
+        ip: rtc_ip,
+        announced_ip,
     };
     let media_codecs = media_codecs();
 
@@ -106,6 +110,18 @@ async fn main() {
             },
         );
 
+    let mut cors = warp::cors();
+    // TODO force adoption after updating documentation
+    if opts.no_cors || true {
+        log::warn!(
+            "disabling CORS for control endpoint (in the future, --no-cors will be required)"
+        );
+        cors = cors
+            .allow_any_origin()
+            .allow_headers(vec!["content-type"])
+            .allow_methods(vec!["POST"]);
+    }
+
     let graphql_control_post = async_graphql_warp::graphql(control_schema.clone())
         .and_then(
             |(schema, request): (ControlSchema, async_graphql::Request)| async move {
@@ -114,12 +130,7 @@ async fn main() {
                 ))
             },
         )
-        .with(
-            warp::cors()
-                .allow_any_origin()
-                .allow_headers(vec!["content-type"])
-                .allow_methods(vec!["POST"]),
-        );
+        .with(cors);
 
     let graphql_playground = warp::path::end().and(warp::get()).map(|| {
         HttpResponse::builder()
