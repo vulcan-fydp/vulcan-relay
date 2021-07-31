@@ -178,11 +178,18 @@ async fn main() -> Result<(), anyhow::Error> {
         "-fflags", "+genpts", 
         "-stream_loop", "-1", 
         "-i", &opts.file, 
+
         "-map", "0:v:0", 
         "-c:v", "copy",
-        // "-c:v", "libx264", "-profile:v", "high", "-level:v", "4.0", "-pix_fmt" ,"yuv420p", "-g", "50", "-tune", "zerolatency",
+
+        // https://trac.ffmpeg.org/ticket/7137
+        // https://ffmpeg.org/ffmpeg-bitstream-filters.html#h264_005fmp4toannexb
+        // https://ffmpeg.org/ffmpeg-bitstream-filters.html#dump_005fextra
+        "-bsf:v", "h264_mp4toannexb,dump_extra",       
+
         "-map", "0:a:0",
         "-c:a", "copy", 
+
         "-f", "tee",
         &format!("[select=a:f=rtp:ssrc=11111111:payload_type=101]rtp://{}:{}|[select=v:f=rtp:ssrc=22222222:payload_type=102]rtp://{}:{}",
             audio_transport_options.tuple.local_ip(),
