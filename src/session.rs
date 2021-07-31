@@ -192,18 +192,6 @@ impl Session {
             self.id()
         );
 
-        // remove this later
-        if kind == MediaKind::Video {
-            self.trace_producer(
-                producer.id(),
-                vec![
-                    ProducerTraceEventType::Rtp,
-                    ProducerTraceEventType::KeyFrame,
-                ],
-            )
-            .await;
-        }
-
         Ok(producer)
     }
 

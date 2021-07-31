@@ -238,7 +238,7 @@ impl RelayServer {
             .filter_map(|(fsid, _)| {
                 state
                     .session_options
-                    .get(&fsid)
+                    .get(fsid)
                     .filter(|session_options| match session_options {
                         SessionOptions::WebClient(client_frid) => client_frid == frid,
                         _ => false,
