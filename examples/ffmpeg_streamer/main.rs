@@ -1,6 +1,8 @@
 use serde::Serialize;
+use std::io::Read;
 use std::num::{NonZeroU32, NonZeroU8};
 use std::process::Command;
+use std::sync::Arc;
 
 use clap::{AppSettings, Clap};
 use futures::StreamExt;
@@ -9,7 +11,6 @@ use mediasoup::rtp_parameters::{
     MediaKind, MimeTypeAudio, MimeTypeVideo, RtpCodecParameters, RtpCodecParametersParameters,
     RtpEncodingParameters, RtpParameters,
 };
-use native_tls::TlsConnector;
 use tokio::net::TcpStream;
 use tokio_tungstenite::Connector;
 
@@ -47,10 +48,23 @@ async fn main() -> Result<(), anyhow::Error> {
     );
     let opts: Opts = Opts::parse();
 
-    let connector = TlsConnector::builder()
-        .danger_accept_invalid_hostnames(true)
-        .danger_accept_invalid_certs(true)
-        .build()?;
+    struct PromiscuousServerVerifier;
+    impl rustls::ServerCertVerifier for PromiscuousServerVerifier {
+        fn verify_server_cert(
+            &self,
+            _roots: &rustls::RootCertStore,
+            _presented_certs: &[rustls::Certificate],
+            _dns_name: webpki::DNSNameRef,
+            _ocsp_response: &[u8],
+        ) -> Result<rustls::ServerCertVerified, rustls::TLSError> {
+            // here be dragons
+            Ok(rustls::ServerCertVerified::assertion())
+        }
+    }
+    let mut client_config = rustls::ClientConfig::default();
+    client_config
+        .dangerous()
+        .set_certificate_verifier(Arc::new(PromiscuousServerVerifier));
 
     let uri: Uri = opts.signal_addr.parse()?;
     log::info!("connecting to {}", &uri);
@@ -70,7 +84,7 @@ async fn main() -> Result<(), anyhow::Error> {
         Some(if opts.no_tls {
             Connector::Plain
         } else {
-            Connector::NativeTls(connector)
+            Connector::Rustls(Arc::new(client_config))
         }),
     )
     .await?;
@@ -173,6 +187,10 @@ async fn main() -> Result<(), anyhow::Error> {
         }
     });
 
+    // pause in case we want to ffmpeg manually
+    println!("Press any key to continue...");
+    let _ = std::io::stdin().read(&mut [0u8]).unwrap();
+
     let mut ffmpeg = Command::new("ffmpeg").args(&[
         "-re", 
         "-fflags", "+genpts", 
@@ -181,6 +199,8 @@ async fn main() -> Result<(), anyhow::Error> {
 
         "-map", "0:v:0", 
         "-c:v", "copy",
+        // "-c:v", "libx264", "-preset", "ultrafast", "-maxrate", "3000k", "-bufsize", "3000k", 
+        // "-pix_fmt", "yuv420p" ,"-g" ,"50",
 
         // https://trac.ffmpeg.org/ticket/7137
         // https://ffmpeg.org/ffmpeg-bitstream-filters.html#h264_005fmp4toannexb
