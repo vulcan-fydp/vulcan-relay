@@ -65,8 +65,10 @@ async fn producer_consumer_connected_after_signalling() {
 
     let room = vulcast.get_room();
 
-    let mut producer_stream = room.available_producers();
-    let mut data_producer_stream = room.available_data_producers();
+    let producer_stream = room.available_producers();
+    let data_producer_stream = room.available_data_producers();
+    tokio::pin!(producer_stream);
+    tokio::pin!(data_producer_stream);
 
     let _audio_producer = vulcast
         .produce(

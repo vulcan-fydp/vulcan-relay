@@ -1,4 +1,7 @@
-use futures::stream::{self, Stream, StreamExt};
+use futures::{
+    future,
+    stream::{self, Stream, StreamExt},
+};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
 use uuid::Uuid;
@@ -32,19 +35,6 @@ pub struct WeakRoom {
     shared: Weak<Shared>,
 }
 
-#[derive(Clone)]
-pub enum ClientUpdate {
-    Leave,
-    Join,
-}
-
-#[derive(Clone)]
-pub struct ClientStateUpdate {
-    pub update: ClientUpdate,
-    pub name: String,
-    pub session_id: SessionId,
-}
-
 #[derive(Debug)]
 struct Shared {
     state: Mutex<State>,
@@ -54,14 +44,32 @@ struct Shared {
     codecs: Vec<RtpCodecCapability>,
 
     router: OnceCell<Router>,
-    producer_available_tx: broadcast::Sender<ProducerId>,
-    data_producer_available_tx: broadcast::Sender<DataProducerId>,
-    client_state_update_tx: broadcast::Sender<ClientStateUpdate>,
+    channel_tx: broadcast::Sender<Message>,
 }
 
 #[derive(Debug)]
 struct State {
     sessions: HashMap<SessionId, WeakSession>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    ProducerAvailable(ProducerId),
+    DataProducerAvailable(DataProducerId),
+    ClientStateUpdate(ClientStateUpdate),
+}
+
+#[derive(Debug, Clone)]
+pub struct ClientStateUpdate {
+    pub update: ClientUpdate,
+    pub name: String,
+    pub session_id: SessionId,
+}
+
+#[derive(Debug, Clone)]
+pub enum ClientUpdate {
+    Leave,
+    Join,
 }
 
 impl Room {
@@ -77,9 +85,7 @@ impl Room {
                 worker,
                 codecs,
                 router: OnceCell::new(),
-                producer_available_tx: broadcast::channel(16).0,
-                data_producer_available_tx: broadcast::channel(16).0,
-                client_state_update_tx: broadcast::channel(16).0,
+                channel_tx: broadcast::channel(16).0,
             }),
         }
     }
@@ -103,11 +109,14 @@ impl Room {
     pub fn add_session(&self, session: Session) {
         let mut state = self.shared.state.lock().unwrap();
         let session_id = session.id();
-        let _ = self.shared.client_state_update_tx.send(ClientStateUpdate {
-            update: ClientUpdate::Join,
-            name: "CALLUM MOSELELY".to_owned(),
-            session_id,
-        });
+        let _ = self
+            .shared
+            .channel_tx
+            .send(Message::ClientStateUpdate(ClientStateUpdate {
+                update: ClientUpdate::Join,
+                name: "CALLUM MOSELELY".to_owned(),
+                session_id,
+            }));
         state.sessions.insert(session_id, session.downgrade());
         log::trace!("<-> session {} (room {})", session.id(), self.id());
     }
@@ -115,68 +124,77 @@ impl Room {
     /// Remove a session from this room.
     pub fn remove_session(&self, session_id: SessionId) {
         let mut state = self.shared.state.lock().unwrap();
-        let _ = self.shared.client_state_update_tx.send(ClientStateUpdate {
-            update: ClientUpdate::Leave,
-            name: "CALLUM MOSELELY".to_owned(),
-            session_id,
-        });
+        let _ = self
+            .shared
+            .channel_tx
+            .send(Message::ClientStateUpdate(ClientStateUpdate {
+                update: ClientUpdate::Leave,
+                name: "CALLUM MOSELELY".to_owned(),
+                session_id,
+            }));
         state.sessions.remove(&session_id).unwrap();
         log::trace!("</> session {} (room {})", session_id, self.id());
     }
 
     /// Announce a new producer to all sessions in this room.
     pub fn announce_producer(&self, producer_id: ProducerId) {
-        let _ = self.shared.producer_available_tx.send(producer_id);
+        let _ = self
+            .shared
+            .channel_tx
+            .send(Message::ProducerAvailable(producer_id));
     }
     /// Announce a new data producer to all sessions in this room.
     pub fn announce_data_producer(&self, data_producer_id: DataProducerId) {
         let _ = self
             .shared
-            .data_producer_available_tx
-            .send(data_producer_id);
+            .channel_tx
+            .send(Message::DataProducerAvailable(data_producer_id));
     }
 
     /// Get a stream which yields existing and new producers.
     pub fn available_producers(&self) -> impl Stream<Item = ProducerId> {
-        let state = self.shared.state.lock().unwrap();
-        let producers = state
-            .sessions
-            .values()
-            .filter_map(|weak_session| weak_session.upgrade()) // ignore dropped sessions
+        let producers = self
+            .active_sessions() // ignore dropped sessions
+            .into_iter()
             .flat_map(|session| session.get_producers())
             .filter(|producer| !producer.closed()) // ignore closed producers
             .map(|producer| producer.id())
             .collect::<Vec<ProducerId>>();
         stream::select(
             stream::iter(producers),
-            BroadcastStream::new(self.shared.producer_available_tx.subscribe()).map(|x| x.unwrap()),
+            self.channel_stream().filter_map(|x| async move {
+                match x {
+                    Message::ProducerAvailable(producer_id) => Some(producer_id),
+                    _ => None,
+                }
+            }),
         )
     }
     /// Get a stream which yields existing and new data producers.
     pub fn available_data_producers(&self) -> impl Stream<Item = DataProducerId> {
-        let state = self.shared.state.lock().unwrap();
-        let data_producers = state
-            .sessions
-            .values()
-            .filter_map(|weak_session| weak_session.upgrade()) // ignore dropped sessions
+        let data_producers = self
+            .active_sessions() // ignore dropped sessions
+            .into_iter()
             .flat_map(|session| session.get_data_producers())
             .filter(|data_producer| !data_producer.closed()) // ignore closed data producers
             .map(|data_producer| data_producer.id())
             .collect::<Vec<DataProducerId>>();
         stream::select(
             stream::iter(data_producers),
-            BroadcastStream::new(self.shared.data_producer_available_tx.subscribe())
-                .map(|x| x.unwrap()),
+            self.channel_stream().filter_map(|x| async move {
+                match x {
+                    Message::DataProducerAvailable(data_producer_id) => Some(data_producer_id),
+                    _ => None,
+                }
+            }),
         )
     }
 
     /// Get a stream which yields existing and new client state updates.
     pub fn client_state_updates(&self) -> impl Stream<Item = ClientStateUpdate> {
-        let state = self.shared.state.lock().unwrap();
-        let clients = state
-            .sessions
-            .values()
-            .filter_map(|weak_session| weak_session.upgrade()) // ignore dropped sessions
+        let clients = self
+            .active_sessions() // ignore dropped sessions
+            .into_iter()
             .map(|session| ClientStateUpdate {
                 update: ClientUpdate::Join,
                 name: "CALLUM MOESLELY".to_owned(),
@@ -185,9 +203,27 @@ impl Room {
             .collect::<Vec<ClientStateUpdate>>();
         stream::select(
             stream::iter(clients),
-            BroadcastStream::new(self.shared.client_state_update_tx.subscribe())
-                .map(|x| x.unwrap()),
+            self.channel_stream().filter_map(|x| async move {
+                match x {
+                    Message::ClientStateUpdate(client_state_update) => Some(client_state_update),
+                    _ => None,
+                }
+            }),
         )
+    }
+
+    fn active_sessions(&self) -> Vec<Session> {
+        let state = self.shared.state.lock().unwrap();
+        state
+            .sessions
+            .values()
+            .filter_map(|weak_session| weak_session.upgrade())
+            .collect()
+    }
+    fn channel_stream(&self) -> impl Stream<Item = Message> {
+        BroadcastStream::new(self.shared.channel_tx.subscribe())
+            .take_while(|x| future::ready(x.is_ok()))
+            .map(|x| x.unwrap())
     }
 
     pub fn id(&self) -> RoomId {
