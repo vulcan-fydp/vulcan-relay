@@ -173,27 +173,19 @@ struct UnknownRoomError {
 struct UnknownSessionError {
     session: Session,
 }
-/// The specified ID is not unique.
-#[derive(SimpleObject)]
-struct NonUniqueIdError {
-    id: ID,
-}
 
 #[derive(Union)]
 enum RegisterRoomResult {
     Ok(Room),
     VulcastInRoom(VulcastInRoomError),
     UnknownSession(UnknownSessionError),
-    NonUniqueId(NonUniqueIdError),
 }
 impl From<RegisterRoomError> for RegisterRoomResult {
     fn from(err: RegisterRoomError) -> Self {
         match err {
-            RegisterRoomError::NonUniqueId(foreign_room_id) => {
-                RegisterRoomResult::NonUniqueId(NonUniqueIdError {
-                    id: foreign_room_id.into(),
-                })
-            }
+            RegisterRoomError::NonUniqueId(foreign_room_id) => RegisterRoomResult::Ok(Room {
+                id: foreign_room_id.into(),
+            }),
             RegisterRoomError::UnknownSession(foreign_session_id) => {
                 RegisterRoomResult::UnknownSession(UnknownSessionError {
                     session: Session {
@@ -235,16 +227,17 @@ impl From<UnregisterRoomError> for UnregisterRoomResult {
 enum RegisterSessionResult {
     Ok(SessionWithToken),
     UnknownRoom(UnknownRoomError),
-    NonUniqueId(NonUniqueIdError),
 }
 impl From<RegisterSessionError> for RegisterSessionResult {
     fn from(err: RegisterSessionError) -> Self {
         match err {
-            RegisterSessionError::NonUniqueId(foreign_session_id) => {
-                RegisterSessionResult::NonUniqueId(NonUniqueIdError {
-                    id: foreign_session_id.into(),
-                })
-            }
+            RegisterSessionError::NonUniqueId {
+                id: foreign_session_id,
+                token,
+            } => RegisterSessionResult::Ok(SessionWithToken {
+                id: foreign_session_id.into(),
+                access_token: token.into(),
+            }),
             RegisterSessionError::UnknownRoom(foreign_room_id) => {
                 RegisterSessionResult::UnknownRoom(UnknownRoomError {
                     room: Room {

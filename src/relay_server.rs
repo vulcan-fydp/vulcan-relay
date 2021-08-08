@@ -127,7 +127,17 @@ impl RelayServer {
                     state.session_options.insert(fsid, session_options.clone());
                     Ok(session_token)
                 }
-                Err((fsid, _)) => Err(RegisterSessionError::NonUniqueId(fsid)),
+                Err((fsid, _)) => {
+                    let existing_token = state
+                        .registered_sessions
+                        .get_by_left(&fsid)
+                        .unwrap()
+                        .clone();
+                    Err(RegisterSessionError::NonUniqueId {
+                        id: fsid,
+                        token: existing_token,
+                    })
+                }
             },
         }
     }
@@ -287,8 +297,11 @@ pub enum SessionOptions {
 pub enum RegisterSessionError {
     #[error("the room `{0}` is not registered")]
     UnknownRoom(ForeignRoomId),
-    #[error("the session id `{0}` is already taken")]
-    NonUniqueId(ForeignSessionId),
+    #[error("the session id `{id}` is already taken")]
+    NonUniqueId {
+        id: ForeignSessionId,
+        token: SessionToken,
+    },
 }
 
 #[derive(Debug, Error, PartialEq, Eq, PartialOrd, Ord)]
