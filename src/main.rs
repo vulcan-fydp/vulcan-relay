@@ -2,6 +2,7 @@ use futures::future;
 use std::convert::Infallible;
 use std::net::{IpAddr, SocketAddr};
 use std::num::{NonZeroU32, NonZeroU8};
+use uuid::Uuid;
 
 use async_graphql::http::{playground_source, GraphQLPlaygroundConfig};
 use clap::Clap;
@@ -69,7 +70,7 @@ async fn main() {
                 let reply = ws.on_upgrade(enclose! { (relay_server, signal_schema) move |websocket| async move {
                     // get token from cookie if it exists
                     let cookie_token = cookie_token.and_then(|cookie_token| {
-                        serde_json::from_str::<SessionToken>(cookie_token.as_str()).ok()
+                        Uuid::parse_str(&cookie_token).ok().map(SessionToken)
                     });
 
                     let (tx, rx) = oneshot::channel();
