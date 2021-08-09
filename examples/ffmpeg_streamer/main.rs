@@ -153,14 +153,10 @@ async fn main() -> Result<(), anyhow::Error> {
             kind: MediaKind::Video,
             rtp_parameters: RtpParameters {
                 codecs: vec![RtpCodecParameters::Video {
-                    mime_type: MimeTypeVideo::H264,
+                    mime_type: MimeTypeVideo::Vp8,
                     payload_type: 102,
                     clock_rate: NonZeroU32::new(90000).unwrap(),
-                    parameters: RtpCodecParametersParameters::from([
-                        ("packetization-mode", 1u32.into()),
-                        ("level-asymmetry-allowed", 1u32.into()),
-                        ("profile-level-id", "4d0032".into()),
-                    ]),
+                    parameters: RtpCodecParametersParameters::default(),
                     rtcp_feedback: vec![],
                 }],
                 encodings: vec![RtpEncodingParameters {
@@ -191,32 +187,46 @@ async fn main() -> Result<(), anyhow::Error> {
     println!("Press any key to continue...");
     let _ = std::io::stdin().read(&mut [0u8]).unwrap();
 
-    let mut ffmpeg = Command::new("ffmpeg").args(&[
-        "-re", 
-        "-fflags", "+genpts", 
-        "-stream_loop", "-1", 
-        "-i", &opts.file, 
-
-        "-map", "0:v:0", 
-        "-c:v", "copy",
-        // "-c:v", "libx264", "-preset", "ultrafast", "-maxrate", "3000k", "-bufsize", "3000k", 
-        // "-pix_fmt", "yuv420p" ,"-g" ,"50",
-
-        // https://trac.ffmpeg.org/ticket/7137
-        // https://ffmpeg.org/ffmpeg-bitstream-filters.html#h264_005fmp4toannexb
-        // https://ffmpeg.org/ffmpeg-bitstream-filters.html#dump_005fextra
-        "-bsf:v", "h264_mp4toannexb,dump_extra",       
-
-        "-map", "0:a:0",
-        "-c:a", "copy", 
-
-        "-f", "tee",
-        &format!("[select=a:f=rtp:ssrc=11111111:payload_type=101]rtp://{}:{}|[select=v:f=rtp:ssrc=22222222:payload_type=102]rtp://{}:{}",
-            audio_transport_options.tuple.local_ip(),
-            audio_transport_options.tuple.local_port(),
-            video_transport_options.tuple.local_ip(),
-            video_transport_options.tuple.local_port())
-    ]).spawn()?;
+    let mut ffmpeg = Command::new("sh")
+        .args(&[
+            "-c",
+            &format!(
+                r#"gst-launch-1.0  \
+                rtpbin name=rtpbin  \
+                filesrc location="{}"  \
+                ! qtdemux name=demux  \
+                demux.video_0  \
+                ! queue  \
+                ! decodebin  \
+                ! videoconvert  \
+                ! vp8enc target-bitrate=1000000 deadline=1 cpu-used=4  \
+                ! rtpvp8pay pt=102 ssrc=22222222 picture-id-mode=2  \
+                ! rtpbin.send_rtp_sink_0  \
+                rtpbin.send_rtp_src_0 ! udpsink host={} port={}  \
+                rtpbin.send_rtcp_src_0 ! udpsink host={} port={} sync=false async=false  \
+                demux.audio_0  \
+                ! queue  \
+                ! decodebin  \
+                ! audioresample  \
+                ! audioconvert  \
+                ! opusenc  \
+                ! rtpopuspay pt=101 ssrc=11111111  \
+                ! rtpbin.send_rtp_sink_1  \
+                rtpbin.send_rtp_src_1 ! udpsink host={} port={}  \
+                rtpbin.send_rtcp_src_1 ! udpsink host={} port={} sync=false async=false
+                "#,
+                opts.file,
+                video_transport_options.tuple.local_ip(),
+                video_transport_options.tuple.local_port(),
+                video_transport_options.tuple.local_ip(),
+                video_transport_options.tuple.local_port(),
+                audio_transport_options.tuple.local_ip(),
+                audio_transport_options.tuple.local_port(),
+                audio_transport_options.tuple.local_ip(),
+                audio_transport_options.tuple.local_port(),
+            ),
+        ])
+        .spawn()?;
 
     ffmpeg.wait()?;
 
