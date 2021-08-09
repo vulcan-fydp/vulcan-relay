@@ -63,16 +63,16 @@ async fn registration_must_be_unique() {
     let relay_server = fixture::relay_server().await;
 
     // register session
-    assert!(matches!(
-        relay_server.register_session(ForeignSessionId("vulcast".into()), SessionOptions::Vulcast,),
-        Ok(SessionToken(_))
-    ));
+    let token =
+        relay_server.register_session(ForeignSessionId("vulcast".into()), SessionOptions::Vulcast);
+    assert!(matches!(token, Ok(SessionToken(_))));
     // register existing session
     assert_eq!(
         relay_server.register_session(ForeignSessionId("vulcast".into()), SessionOptions::Vulcast,),
-        Err(RegisterSessionError::NonUniqueId(ForeignSessionId(
-            "vulcast".into()
-        )))
+        Err(RegisterSessionError::NonUniqueId {
+            id: ForeignSessionId("vulcast".into()),
+            token: token.unwrap()
+        })
     );
     // unregister session
     assert_eq!(
