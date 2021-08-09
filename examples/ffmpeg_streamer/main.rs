@@ -7,10 +7,7 @@ use std::sync::Arc;
 use clap::{AppSettings, Clap};
 use futures::StreamExt;
 use http::Uri;
-use mediasoup::rtp_parameters::{
-    MediaKind, MimeTypeAudio, MimeTypeVideo, RtpCodecParameters, RtpCodecParametersParameters,
-    RtpEncodingParameters, RtpParameters,
-};
+use mediasoup::rtp_parameters::{MediaKind, MimeTypeAudio, MimeTypeVideo, RtcpFeedback, RtpCodecParameters, RtpCodecParametersParameters, RtpEncodingParameters, RtpParameters};
 use tokio::net::TcpStream;
 use tokio_tungstenite::Connector;
 
@@ -134,7 +131,7 @@ async fn main() -> Result<(), anyhow::Error> {
                     clock_rate: NonZeroU32::new(48000).unwrap(),
                     channels: NonZeroU8::new(2).unwrap(),
                     parameters: RtpCodecParametersParameters::from([("sprop-stereo", 1u32.into())]),
-                    rtcp_feedback: vec![],
+                    rtcp_feedback: vec![RtcpFeedback::TransportCc],
                 }],
                 encodings: vec![RtpEncodingParameters {
                     ssrc: Some(11111111),
@@ -157,7 +154,13 @@ async fn main() -> Result<(), anyhow::Error> {
                     payload_type: 102,
                     clock_rate: NonZeroU32::new(90000).unwrap(),
                     parameters: RtpCodecParametersParameters::default(),
-                    rtcp_feedback: vec![],
+                    rtcp_feedback: vec![
+                        RtcpFeedback::Nack,
+                        RtcpFeedback::NackPli,
+                        RtcpFeedback::CcmFir,
+                        RtcpFeedback::GoogRemb,
+                        RtcpFeedback::TransportCc,
+                    ],
                 }],
                 encodings: vec![RtpEncodingParameters {
                     ssrc: Some(22222222),
@@ -193,17 +196,17 @@ async fn main() -> Result<(), anyhow::Error> {
             &format!(
                 r#"gst-launch-1.0  \
                 rtpbin name=rtpbin  \
-                filesrc location="{}"  \
+                filesrc location="{0}"  \
                 ! qtdemux name=demux  \
                 demux.video_0  \
                 ! queue  \
                 ! decodebin  \
                 ! videoconvert  \
-                ! vp8enc target-bitrate=1000000 deadline=1 cpu-used=4  \
-                ! rtpvp8pay pt=102 ssrc=22222222 picture-id-mode=2  \
+                ! vp8enc target-bitrate=3000000 deadline=1 cpu-used=4  \
+                ! rtpvp8pay pt=102 ssrc=22222222 picture-id-mode=1  \
                 ! rtpbin.send_rtp_sink_0  \
-                rtpbin.send_rtp_src_0 ! udpsink host={} port={}  \
-                rtpbin.send_rtcp_src_0 ! udpsink host={} port={} sync=false async=false  \
+                rtpbin.send_rtp_src_0 ! udpsink host={1} port={2} bind-port=50000  \
+                rtpbin.send_rtcp_src_0 ! udpsink host={1} port={2} bind-port=50000 sync=false async=false  \
                 demux.audio_0  \
                 ! queue  \
                 ! decodebin  \
@@ -212,16 +215,12 @@ async fn main() -> Result<(), anyhow::Error> {
                 ! opusenc  \
                 ! rtpopuspay pt=101 ssrc=11111111  \
                 ! rtpbin.send_rtp_sink_1  \
-                rtpbin.send_rtp_src_1 ! udpsink host={} port={}  \
-                rtpbin.send_rtcp_src_1 ! udpsink host={} port={} sync=false async=false
+                rtpbin.send_rtp_src_1 ! udpsink host={3} port={4} bind-port=50001  \
+                rtpbin.send_rtcp_src_1 ! udpsink host={3} port={4} bind-port=50001 sync=false async=false
                 "#,
                 opts.file,
                 video_transport_options.tuple.local_ip(),
                 video_transport_options.tuple.local_port(),
-                video_transport_options.tuple.local_ip(),
-                video_transport_options.tuple.local_port(),
-                audio_transport_options.tuple.local_ip(),
-                audio_transport_options.tuple.local_port(),
                 audio_transport_options.tuple.local_ip(),
                 audio_transport_options.tuple.local_port(),
             ),
