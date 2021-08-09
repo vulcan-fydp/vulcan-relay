@@ -128,10 +128,7 @@ impl RelayServer {
                     Ok(session_token)
                 }
                 Err((fsid, _)) => {
-                    let existing_token = *state
-                        .registered_sessions
-                        .get_by_left(&fsid)
-                        .unwrap();
+                    let existing_token = *state.registered_sessions.get_by_left(&fsid).unwrap();
                     Err(RegisterSessionError::NonUniqueId {
                         id: fsid,
                         token: existing_token,
