@@ -166,7 +166,7 @@ impl MutationRoot {
     #[graphql(guard(ResourceGuard(
         resource = "Resource::DataConsumer",
         expected = r#"1usize"#,
-        limit = r#"2usize"#
+        limit = r#"128usize"#
     )))]
     async fn consume_data(
         &self,
