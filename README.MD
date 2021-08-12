@@ -72,8 +72,8 @@ Client Session ID: 1
 2. Register Vulcast
 - This will fill the Vulcast Token field
 3. Register Room
-- This will fill the Client Token field
 4. Register Client
+- This will fill the Client Token field
 5. Connect Vulcast
 6. Connect Client
 
