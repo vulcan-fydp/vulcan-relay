@@ -10,6 +10,8 @@ import { ApolloClient, NormalizedCacheObject, InMemoryCache, gql, FetchResult, H
 import { SubscriptionClient } from "subscriptions-transport-ws";
 import { DtlsParameters } from 'mediasoup-client/lib/Transport';
 
+console.log("Running!!!")
+
 declare global {
     interface HTMLCanvasElement {
         captureStream(frameRate?: number): MediaStream;
@@ -43,6 +45,7 @@ let vulcastSub: SubscriptionClient | null = null;
 let clientSub: SubscriptionClient | null = null;
 
 (document.getElementById("registerVulcast") as HTMLButtonElement).addEventListener("click", async function () {
+    console.log("Register Vulcast clicked")
     let client = getControlConnection();
     let result = await client.mutate({
         mutation: gql`

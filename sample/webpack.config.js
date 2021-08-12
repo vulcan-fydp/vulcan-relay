@@ -23,7 +23,8 @@ module.exports = {
 	devServer: {
 		liveReload: false,
 		port: 3001,
-		https: true
+		https: false,
+		allowedHosts: ['vulcangames.fun']
 	},
 	devtool: "source-map"
 };
