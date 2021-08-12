@@ -7,7 +7,10 @@ use std::sync::Arc;
 use clap::{AppSettings, Clap};
 use futures::StreamExt;
 use http::Uri;
-use mediasoup::rtp_parameters::{MediaKind, MimeTypeAudio, MimeTypeVideo, RtcpFeedback, RtpCodecParameters, RtpCodecParametersParameters, RtpEncodingParameters, RtpParameters};
+use mediasoup::rtp_parameters::{
+    MediaKind, MimeTypeAudio, MimeTypeVideo, RtcpFeedback, RtpCodecParameters,
+    RtpCodecParametersParameters, RtpEncodingParameters, RtpParameters,
+};
 use tokio::net::TcpStream;
 use tokio_tungstenite::Connector;
 
@@ -202,7 +205,8 @@ async fn main() -> Result<(), anyhow::Error> {
                 ! queue  \
                 ! decodebin  \
                 ! videoconvert  \
-                ! vp8enc target-bitrate=3000000 deadline=1 cpu-used=4  \
+                ! vp8enc target-bitrate=3000000 end-usage=cbr deadline=1 threads=8 cpu-used=-5  \
+                ! queue  \
                 ! rtpvp8pay pt=102 ssrc=22222222 picture-id-mode=1  \
                 ! rtpbin.send_rtp_sink_0  \
                 rtpbin.send_rtp_src_0 ! udpsink host={1} port={2} bind-port=50000  \
@@ -212,7 +216,8 @@ async fn main() -> Result<(), anyhow::Error> {
                 ! decodebin  \
                 ! audioresample  \
                 ! audioconvert  \
-                ! opusenc  \
+                ! opusenc bitrate=64000 inband-fec=true  \
+                ! queue  \
                 ! rtpopuspay pt=101 ssrc=11111111  \
                 ! rtpbin.send_rtp_sink_1  \
                 rtpbin.send_rtp_src_1 ! udpsink host={3} port={4} bind-port=50001  \
