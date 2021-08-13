@@ -860,8 +860,8 @@ dependencies = [
 
 [[package]]
 name = "graphql-ws"
-version = "0.3.2"
-source = "git+https://github.com/Netdex/graphql-ws#c25c981cf9b2c394f291818b1008f04e065440cc"
+version = "0.4.0"
+source = "git+https://github.com/Netdex/graphql-ws#26d4c5358727e098adc68143e8f12a2748f225fe"
 dependencies = [
  "futures",
  "graphql_client",

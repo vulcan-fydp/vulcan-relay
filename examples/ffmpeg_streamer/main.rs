@@ -94,8 +94,7 @@ async fn main() -> Result<(), anyhow::Error> {
         log::debug!("- {}={:?}", header, value);
     }
 
-    let client = GraphQLWebSocket::new();
-    client.connect(
+    let client = GraphQLWebSocket::new(
         socket,
         Some(serde_json::to_value(SessionToken { token: opts.token })?),
     );

@@ -36,7 +36,7 @@ built = "0.5"
 
 [dev-dependencies]
 graphql_client = "0.10"
-graphql-ws = { version = "0.3", git = "https://github.com/Netdex/graphql-ws" }
+graphql-ws = { version = "0.4", git = "https://github.com/Netdex/graphql-ws" }
 tokio-tungstenite = { version = "0.15", features = ["rustls-tls"] }
 rustls = { version = "0.19", features = ["dangerous_configuration"] }
 webpki = "0.21.0"
