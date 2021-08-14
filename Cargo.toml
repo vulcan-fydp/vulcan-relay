@@ -7,7 +7,7 @@ default-run = "vulcan-relay"
 build = "build.rs"
 
 [dependencies]
-mediasoup = { version = "0.8", git = "https://github.com/netdex/mediasoup", branch = "rust-async-trait-send" }
+mediasoup = { version = "0.8", git = "https://github.com/netdex/mediasoup", branch = "vulcan" }
 
 log = "0.4"
 env_logger = "0.9"
