@@ -43,6 +43,14 @@ pub struct Opts {
     #[clap(short, long, possible_values(&["info", "ice", "dtls", "rtp", "srtp",
         "rtcp", "rtx", "bwe", "score", "simulcast", "svc", "sctp", "message"]))]
     pub log_tags: Vec<WorkerLogTag>,
+
+    /// RTC ports range minimum.
+    #[clap(long, default_value = "10000")]
+    pub rtc_ports_range_min: u16,
+
+    /// RTC ports range maximum.
+    #[clap(long, default_value = "59999")]
+    pub rtc_ports_range_max: u16,
 }
 
 #[derive(Clone, Copy)]

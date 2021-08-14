@@ -45,6 +45,11 @@ async fn main() {
     let rtc_ip: IpAddr = opts.rtc_ip.parse().unwrap();
     let announced_ip = opts.rtc_announce_ip.map(|x| x.parse().unwrap());
     log::info!("rtc ip: {}, rtc announce ip: {:?}", &rtc_ip, &announced_ip);
+    log::info!(
+        "rtc port range: {}-{}",
+        &opts.rtc_ports_range_min,
+        &opts.rtc_ports_range_max
+    );
 
     let transport_listen_ip = TransportListenIp {
         ip: rtc_ip,
@@ -56,6 +61,7 @@ async fn main() {
     let mut worker_settings = WorkerSettings::default();
     worker_settings.log_level = WorkerLogLevel::Debug;
     worker_settings.log_tags = opts.log_tags.into_iter().map(|x| x.0).collect();
+    worker_settings.rtc_ports_range = opts.rtc_ports_range_min..=opts.rtc_ports_range_max;
     let worker = worker_manager.create_worker(worker_settings).await.unwrap();
     let relay_server = RelayServer::new(worker, transport_listen_ip, media_codecs);
 
