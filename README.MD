@@ -26,9 +26,21 @@ In most cases, this will be a public IPv4 address.
 ### Docker
 - If using TLS, certificates must be mounted somewhere in the container and specified as arguments.
 - `--network=host` is recommended (do not forward all 50,000 ports with docker proxy).
+- Make sure to authenticate to ghcr.io using `cat file-with-personal-access-token | docker login ghcr.io -u USERNAME -password-stdin`
+
+1. Pull the container
 ```
 docker pull ghcr.io/vulcan-fydp/vulcan-relay:master
-docker run -d vulcan-relay
+```
+
+2. Get the image id
+```
+IMAGE_ID=$(docker images ghcr.io/vulcan-fydp/vulcan-relay:master -q)
+```
+
+3.
+```
+docker run -d $IMAGE_ID
 ```
 Or, from source:
 ```
