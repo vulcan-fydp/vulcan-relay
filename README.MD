@@ -89,7 +89,41 @@ Client Session ID: 1
 5. Connect Vulcast
 6. Connect Client
 
-## Debugging
+## Troubleshooting
+
+### certificate parse error
+```
+thread 'main' panicked at 'error binding to 0.0.0.0:8443: certificate parse error'
+```
+- Make sure the certificates pointed to by `--cert-path` and `--key-path` exist and are valid
+- If you are using the prebuilt Docker container, make sure the certificates are mounted in the container
+
+### I can't connect to the relay
+- Try using the sample app to connect, make sure the signal address and 
+control address are set to whatever the relay prints when you start it up
+- If that doesn't work, then make sure the `--signal-addr`, `--control-addr`, `--rtc-ip` and `--rtc-announce-ip` 
+relay parameters are correct (use the situations below to figure out how to assign them)
+- If you are in Situation 2 or 3 below, make sure your firewall is not blocking the ports
+
+#### Situation 1: Connecting from local machine
+- You can omit all the above arguments and leave them at their defaults
+
+#### Situation 2: Connecting to another machine on LAN (including WSL, Hyper-V, VM)
+- The relay machine and the machine using the sample app share a common LAN
+- Find the IP of the relay machine on the adapter connected to the common LAN
+- If you are using Hyper-V, this will be the address on the virtual `Hyper-V Ethernet` adapter
+- If you are using a VM, this will be the address on some Host only or NAT virtual Ethernet adapter
+
+- `--signal-addr 0.0.0.0:8443 --control-addr 0.0.0.0:9443 --rtc-ip 0.0.0.0 --rtc-announce-ip <RELAY_LAN_IP>`
+
+#### Situation 3: Connecting across the internet
+- Find the public IPv4 address of your relay machine
+- Open ports 10000-59999 for both UDP and TCP traffic
+
+- `--signal-addr 0.0.0.0:8443 --control-addr 0.0.0.0:9443 --rtc-ip 0.0.0.0 --rtc-announce-ip <RELAY_PUBLIC_IPV4_IP>`
+
+### Everything is broken
+Run the relay with the following arguments to enable full logging then have Gordon look at it
 ```
 RUST_LOG=vulcan_relay=trace,mediasoup=debug RUST_BACKTRACE=1 ./vulcan-relay ... -log-tags info message rtcp rtp rtx sctp srtp
 ```
