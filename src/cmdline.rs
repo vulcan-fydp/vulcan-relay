@@ -1,11 +1,9 @@
 use std::str::FromStr;
 
-use crate::built_info;
-use clap::{AppSettings, Clap};
+use clap::{crate_authors, crate_description, crate_version, Parser};
 
-#[derive(Clap, Clone)]
-#[clap(version = built_info::PKG_VERSION, author = built_info::PKG_AUTHORS)]
-#[clap(setting = AppSettings::ColoredHelp)]
+#[derive(Parser, Clone)]
+#[clap(version = crate_version!(), author = crate_authors!(), about=crate_description!())]
 pub struct Opts {
     /// Path to certificate to use for control and signal endpoints.
     #[clap(short, long, required_unless_present("no-tls"))]

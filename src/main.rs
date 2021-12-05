@@ -1,11 +1,13 @@
+use async_graphql_warp::GraphQLWebSocket;
+use clap::Parser;
 use futures::future;
+use std::cell::RefCell;
 use std::convert::Infallible;
 use std::net::{IpAddr, SocketAddr};
 use std::num::{NonZeroU32, NonZeroU8};
 use uuid::Uuid;
 
 use async_graphql::http::{playground_source, GraphQLPlaygroundConfig};
-use clap::Clap;
 use mediasoup::worker::WorkerLogLevel;
 use mediasoup::{
     data_structures::TransportListenIp,
@@ -32,15 +34,16 @@ async fn main() {
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "vulcan_relay=trace"),
     );
 
+    let opts: Opts = Opts::parse();
+
     log::info!(
-        "{} {} {} {}",
+        "{} {}-{:?} {} {}",
         built_info::PKG_NAME,
         built_info::PKG_VERSION,
+        built_info::GIT_COMMIT_HASH,
         built_info::TARGET,
         built_info::PROFILE
     );
-
-    let opts: Opts = Opts::parse();
 
     let rtc_ip: IpAddr = opts.rtc_ip.parse().unwrap();
     let announced_ip = opts.rtc_announce_ip.map(|x| x.parse().unwrap());
@@ -73,42 +76,41 @@ async fn main() {
         .and(async_graphql_warp::graphql_protocol())
         .map(
             move |ws: warp::ws::Ws, cookie_token: Option<String>, protocol| {
-                let reply = ws.on_upgrade(enclose! { (relay_server, signal_schema) move |websocket| async move {
-                    // get token from cookie if it exists
-                    let cookie_token = cookie_token.and_then(|cookie_token| {
-                        Uuid::parse_str(&cookie_token).ok().map(SessionToken)
-                    });
+                let reply = ws.on_upgrade(
+                    enclose! { (relay_server, signal_schema) move |websocket| async move {
+                        // get token from cookie if it exists
+                        let cookie_token = cookie_token.and_then(|cookie_token| {
+                            Uuid::parse_str(&cookie_token).ok().map(SessionToken)
+                        });
 
-                    let (tx, rx) = oneshot::channel();
-                    async_graphql_warp::graphql_subscription_upgrade_with_data(
-                        websocket,
-                        protocol,
-                        signal_schema,
-                        enclose! { (relay_server) move |value| async move {
-                            let mut data = async_graphql::Data::default();
-                            // get token from connection params if it exists
-                            let param_token = value.get("token").and_then(|param_token| {
-                                serde_json::from_value::<SessionToken>(param_token.to_owned()).ok()
-                            });
-                            let token = param_token.or(cookie_token);
-                            if let Some(token) = token {
-                                // create session from the selected token
-                                if let Some(session) =
-                                    relay_server.session_from_token(token)
-                                {
-                                    tx.send(token).unwrap();
-                                    data.insert(session.downgrade());
+                        let (tx, rx) = oneshot::channel();
+                        GraphQLWebSocket::new(websocket, signal_schema, protocol).on_connection_init(
+                            enclose! { (relay_server) move |value| async move {
+                                let mut data = async_graphql::Data::default();
+                                // get token from connection params if it exists
+                                let param_token = value.get("token").and_then(|param_token| {
+                                    serde_json::from_value::<SessionToken>(param_token.to_owned()).ok()
+                                });
+                                let token = param_token.or(cookie_token);
+                                if let Some(token) = token {
+                                    // create session from the selected token
+                                    if let Some(session) =
+                                        relay_server.session_from_token(token)
+                                    {
+                                        tx.send(token).unwrap();
+                                        data.insert(session.downgrade());
+                                    }
                                 }
+                                Ok(data)
                             }
-                            Ok(data)
-                        }},
-                    )
-                    .await;
+                        }).serve().await;
 
-                    if let Ok(token) = rx.await {
-                        drop(relay_server.take_session_by_token(&token))
-                    }
-                }});
+
+                        if let Ok(token) = rx.await {
+                            drop(relay_server.take_session_by_token(&token))
+                        }
+                    }},
+                );
                 warp::reply::with_header(
                     reply,
                     "Sec-WebSocket-Protocol",
@@ -130,7 +132,7 @@ async fn main() {
     let graphql_control_post = async_graphql_warp::graphql(control_schema.clone())
         .and_then(
             |(schema, request): (ControlSchema, async_graphql::Request)| async move {
-                Ok::<_, Infallible>(async_graphql_warp::Response::from(
+                Ok::<_, Infallible>(async_graphql_warp::GraphQLResponse::from(
                     schema.execute(request).await,
                 ))
             },

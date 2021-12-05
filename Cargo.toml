@@ -1,13 +1,15 @@
 [package]
 name = "vulcan-relay"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["netdex"]
-edition = "2018"
+edition = "2021"
 default-run = "vulcan-relay"
 build = "build.rs"
 
 [dependencies]
-mediasoup = { version = "0.8", git = "https://github.com/netdex/mediasoup", branch = "vulcan" }
+# mediasoup uses un-Send async traits so we can't schedule them with Tokio...
+# maybe submit a PR upstream
+mediasoup = { version = "0.9", git = "https://github.com/netdex/mediasoup", branch = "vulcan" }
 
 log = "0.4"
 env_logger = "0.9"
@@ -17,7 +19,7 @@ uuid = { version = "0.8", features = ["serde", "v4"] }
 
 thiserror = "1.0"
 anyhow = "1.0"
-clap = "3.0.0-beta.2"
+clap = "3.0.0-beta.5"
 bimap = "0.6.1"
 derive_more = "0.99.0"
 
@@ -26,18 +28,21 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 futures = "0.3"
 async-trait = "0.1"
 
+# warp depends on an old version of tokio-tungstenite... maybe submit a PR upstream
 warp = { version = "0.3", features = ["tls"] }
-# async-graphql 2.9 added bytes support, which messes up UUID scalar types
-async-graphql = "~2.8"
-async-graphql-warp = "~2.8"
+
+# async-graphql-warp uses overly restrictive Fn rather than FnOnce for
+# WebSockets connection initializer callback... maybe submit a PR upstream
+async-graphql = { version = "3.0", git = "https://github.com/netdex/async-graphql" }
+async-graphql-warp = { version = "3.0", git = "https://github.com/netdex/async-graphql" }
 
 [build-dependencies]
-built = "0.5"
+built = { version = "0.5", features = ["git2"] }
 
 [dev-dependencies]
 graphql_client = "0.10"
 graphql-ws = { version = "0.4", git = "https://github.com/Netdex/graphql-ws" }
-tokio-tungstenite = { version = "0.15", features = ["rustls-tls"] }
-rustls = { version = "0.19", features = ["dangerous_configuration"] }
-webpki = "0.21.0"
+tokio-tungstenite = { version = "0.16", features = ["rustls-tls-webpki-roots"] }
+rustls = { version = "0.20", features = ["dangerous_configuration"] }
+webpki = "0.22.0"
 http = "0.2"

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use anyhow::anyhow;
 use async_graphql::{
-    guard::Guard, scalar, Context, Enum, Object, Result, Schema, SimpleObject, Subscription, ID,
+    scalar, Context, Enum, Guard, Object, Result, Schema, SimpleObject, Subscription, ID,
 };
 use mediasoup::transport::Transport;
 
@@ -43,11 +43,7 @@ impl MutationRoot {
     }
 
     /// WebRTC transport parameters.
-    #[graphql(guard(ResourceGuard(
-        resource = "Resource::WebrtcTransport",
-        expected = r#"1usize"#,
-        limit = r#"2usize"#
-    )))]
+    #[graphql(guard = "ResourceGuard::new(Resource::WebrtcTransport, 2, 1)")]
     async fn create_webrtc_transport(&self, ctx: &Context<'_>) -> Result<WebRtcTransportOptions> {
         let session = session_from_ctx(ctx)?;
         let transport = session.create_webrtc_transport().await;
@@ -60,11 +56,7 @@ impl MutationRoot {
         })
     }
     /// Plain receive transport connection parameters.
-    #[graphql(guard(ResourceGuard(
-        resource = "Resource::PlainTransport",
-        expected = r#"1usize"#,
-        limit = r#"2usize"#
-    )))]
+    #[graphql(guard = "ResourceGuard::new(Resource::PlainTransport, 2, 1)")]
     async fn create_plain_transport(&self, ctx: &Context<'_>) -> Result<PlainTransportOptions> {
         let session = session_from_ctx(ctx)?;
         let plain_transport = session.create_plain_transport().await;
@@ -90,11 +82,7 @@ impl MutationRoot {
     }
 
     /// Request consumption of media stream.
-    #[graphql(guard(ResourceGuard(
-        resource = "Resource::Consumer",
-        expected = r#"1usize"#,
-        limit = r#"2usize"#
-    )))]
+    #[graphql(guard = "ResourceGuard::new(Resource::Consumer, 2, 1)")]
     async fn consume(
         &self,
         ctx: &Context<'_>,
@@ -119,11 +107,7 @@ impl MutationRoot {
     }
 
     /// Request production of media stream.
-    #[graphql(guard(ResourceGuard(
-        resource = "Resource::Producer",
-        expected = r#"1usize"#,
-        limit = r#"2usize"#
-    )))]
+    #[graphql(guard = "ResourceGuard::new(Resource::Producer, 2, 1)")]
     async fn produce(
         &self,
         ctx: &Context<'_>,
@@ -141,11 +125,7 @@ impl MutationRoot {
     }
 
     /// Request production of a media stream on plain transport.
-    #[graphql(guard(ResourceGuard(
-        resource = "Resource::Producer",
-        expected = r#"1usize"#,
-        limit = r#"2usize"#
-    )))]
+    #[graphql(guard = "ResourceGuard::new(Resource::Producer, 2, 1)")]
     async fn produce_plain(
         &self,
         ctx: &Context<'_>,
@@ -163,11 +143,7 @@ impl MutationRoot {
     }
 
     /// Request consumption of data stream.
-    #[graphql(guard(ResourceGuard(
-        resource = "Resource::DataConsumer",
-        expected = r#"1usize"#,
-        limit = r#"128usize"#
-    )))]
+    #[graphql(guard = "ResourceGuard::new(Resource::DataConsumer, 128, 1)")]
     async fn consume_data(
         &self,
         ctx: &Context<'_>,
@@ -186,11 +162,7 @@ impl MutationRoot {
     }
 
     /// Request production of data stream.
-    #[graphql(guard(ResourceGuard(
-        resource = "Resource::DataProducer",
-        expected = r#"1usize"#,
-        limit = r#"2usize"#
-    )))]
+    #[graphql(guard = "ResourceGuard::new(Resource::DataProducer, 2, 1)")]
     async fn produce_data(
         &self,
         ctx: &Context<'_>,
@@ -248,6 +220,15 @@ struct ResourceGuard {
     expected: usize,
     /// Maximum allowable count of this resource.
     limit: usize,
+}
+impl ResourceGuard {
+    fn new(resource: Resource, limit: usize, expected: usize) -> Self {
+        ResourceGuard {
+            resource,
+            limit,
+            expected,
+        }
+    }
 }
 #[async_trait::async_trait]
 impl Guard for ResourceGuard {
