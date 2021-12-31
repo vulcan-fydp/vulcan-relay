@@ -1,9 +1,9 @@
 use std::str::FromStr;
 
-use clap::{crate_authors, crate_description, crate_version, Parser};
+use clap::Parser;
 
 #[derive(Parser, Clone)]
-#[clap(version = crate_version!(), author = crate_authors!(), about=crate_description!())]
+#[clap(about, version, author)]
 pub struct Opts {
     /// Path to certificate to use for control and signal endpoints.
     #[clap(short, long, required_unless_present("no-tls"))]

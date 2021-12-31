@@ -19,7 +19,7 @@ uuid = { version = "0.8", features = ["serde", "v4"] }
 
 thiserror = "1.0"
 anyhow = "1.0"
-clap = "3.0.0-beta.5"
+clap = { version = "3.0.0-rc.11", features = ["derive"] }
 bimap = "0.6.1"
 derive_more = "0.99.0"
 

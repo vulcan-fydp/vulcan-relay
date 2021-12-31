@@ -1,7 +1,6 @@
 use async_graphql_warp::GraphQLWebSocket;
 use clap::Parser;
 use futures::future;
-use std::cell::RefCell;
 use std::convert::Infallible;
 use std::net::{IpAddr, SocketAddr};
 use std::num::{NonZeroU32, NonZeroU8};
