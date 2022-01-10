@@ -1,6 +1,6 @@
 FROM rust:latest AS builder
 RUN apt-get update && apt-get install -y \ 
-    build-essential \
+    build-essential python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
 # build dependencies (including mediasoup-sys)
