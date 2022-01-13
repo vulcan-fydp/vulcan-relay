@@ -1,8 +1,6 @@
 # vulcan-relay
 
-## Build
-### Ad-hoc
-- Linux only
+## Build from source (Linux only)
 ```
 git clone https://github.com/vulcan-fydp/vulcan-relay.git
 cd vulcan-relay
@@ -23,34 +21,75 @@ In most cases, this will be a public IPv4 address.
 - To dump the procedurally generated GraphQL signalling schema, run `cargo run --bin dump_signal_schema`.
 - To dump the procedurally generated GraphQL control schema, run `cargo run --bin dump_control_schema`.
 
-### Docker
-- If using TLS, certificates must be mounted somewhere in the container and specified as arguments.
-- `--network=host` is recommended (do not forward all 50,000 ports with docker proxy).
-- Make sure to authenticate to ghcr.io using `cat file-with-personal-access-token | docker login ghcr.io -u USERNAME -password-stdin`
+## Docker
+- If the repository is private, authenticate with `docker login ghcr.io -u USERNAME` using a personal access token. The token must have the `read:packages` scope.
 
-1. Pull the container
+
+### Windows (from repository)
+- On Windows, you will only be able to access the relay locally. 
+
+1. Open a command prompt and run `ipconfig`. Use the IPv4 address of the Hyper-V Virtual Ethernet Adapter as `RTC_ANNOUNCE_IP` below.
+
+2. Run the following command:
 ```
-docker pull ghcr.io/vulcan-fydp/vulcan-relay:master
+docker run --it --init --rm \
+	-p 8443:8443 \
+	-p 9443:9443 \
+	-p 10000-10010:10000-10010/udp \
+	ghcr.io/vulcan-fydp/vulcan-relay:master \
+	--rtc-ip 0.0.0.0 \
+	--rtc-announce-ip <RTC_ANNOUNCE_IP> \
+	--signal-addr 0.0.0.0:8443 \
+	--control-addr 0.0.0.0:8443 \
+	--rtc-ports-range-min 10000 \
+	--rtc-ports-range-max 10010 \
+	--no-tls
 ```
 
-2. Get the image id
+### Linux (from repository)
+1. Run the following command:
 ```
-IMAGE_ID=$(docker images ghcr.io/vulcan-fydp/vulcan-relay:master -q)
+docker run --it --init --rm \
+	--network=host \
+	ghcr.io/vulcan-fydp/vulcan-relay:master \
+	--rtc-ip 0.0.0.0 \
+	--rtc-announce-ip <RTC_ANNOUNCE_IP> \
+	--signal-addr 0.0.0.0:8443 \
+	--control-addr 0.0.0.0:8443 \
+	--no-tls
 ```
 
-3.
-```
-docker run -d $IMAGE_ID
-```
-Or, from source:
+If you don't know what to use for `RTC_ANNOUNCE_IP`, see the troubleshooting section.
+
+### From Dockerfile
+Build the Dockerfile with:
 ```
 docker build -t vulcan-relay .
-docker run -d vulcan-relay
 ```
+Substitute the repository image for your local image in the above commands for Windows and Linux.
 
-Full example for clients connecting within private subnet 192.168.140.0/24:
-```
-docker run -it --init --rm --name relay --network=host -v /mnt/scratch/vulcan-relay/config:/config vulcan-relay --cert-path /config/cert.pem --key-path /config/key.pem --rtc-ip 0.0.0.0 --rtc-announce-ip 192.168.140.136 --signal-addr 0.0.0.0:8443 --control-addr 0.0.0.0:9443
+### Enabling TLS
+- To encrypt all endpoints, you must provide a valid TLS certificate. 
+- If using TLS, certificates must be mounted somewhere in the container and specified as arguments.
+- You must not specify `--no-tls` as an argument when specifying certificates to use.
+
+e.g. Linux:
+```bash
+# Put your certificates in a folder.
+$ ls ~/certs
+cert.pem	key.pem
+$ docker run --it --init --rm \
+	--network=host \
+	# Mount your certificates folder in the container under /config.
+ 	-v ~/certs:/certs
+	ghcr.io/vulcan-fydp/vulcan-relay:master \
+	# Tell the relay to use these certificates.
+	--cert-path /certs/cert.pem \
+	--key-path /certs/key.pem \
+	--rtc-ip 0.0.0.0 \
+	--rtc-announce-ip <ANNOUNCE_IP> \
+	--signal-addr 0.0.0.0:8443 \
+	--control-addr 0.0.0.0:8443 \
 ```
 
 ## Sample
@@ -108,7 +147,7 @@ relay parameters are correct (use the situations below to figure out how to assi
 #### Situation 1: Connecting from local machine
 - You can omit all the above arguments and leave them at their defaults
 
-#### Situation 2: Connecting to another machine on LAN (including WSL, Hyper-V, VM)
+#### Situation 2: Connecting to another machine on LAN (including WSL 2, Hyper-V, VM)
 - The relay machine and the machine using the sample app share a common LAN
 - Find the IP of the relay machine on the adapter connected to the common LAN
 - If you are using Hyper-V, this will be the address on the virtual `Hyper-V Ethernet` adapter
