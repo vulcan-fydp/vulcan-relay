@@ -32,7 +32,7 @@ In most cases, this will be a public IPv4 address.
 
 2. Run the following command:
 ```
-docker run --it --init --rm \
+docker run -it --init --rm \
 	-p 8443:8443 \
 	-p 9443:9443 \
 	-p 10000-10010:10000-10010/udp \
@@ -40,7 +40,7 @@ docker run --it --init --rm \
 	--rtc-ip 0.0.0.0 \
 	--rtc-announce-ip <RTC_ANNOUNCE_IP> \
 	--signal-addr 0.0.0.0:8443 \
-	--control-addr 0.0.0.0:8443 \
+	--control-addr 0.0.0.0:9443 \
 	--rtc-ports-range-min 10000 \
 	--rtc-ports-range-max 10010 \
 	--no-tls
@@ -49,13 +49,13 @@ docker run --it --init --rm \
 ### Linux (from repository)
 1. Run the following command:
 ```
-docker run --it --init --rm \
+docker run -it --init --rm \
 	--network=host \
 	ghcr.io/vulcan-fydp/vulcan-relay:master \
 	--rtc-ip 0.0.0.0 \
 	--rtc-announce-ip <RTC_ANNOUNCE_IP> \
 	--signal-addr 0.0.0.0:8443 \
-	--control-addr 0.0.0.0:8443 \
+	--control-addr 0.0.0.0:9443 \
 	--no-tls
 ```
 
@@ -78,7 +78,7 @@ e.g. Linux:
 # Put your certificates in a folder.
 $ ls ~/certs
 cert.pem	key.pem
-$ docker run --it --init --rm \
+$ docker run -it --init --rm \
 	--network=host \
 	# Mount your certificates folder in the container under /config.
  	-v ~/certs:/certs
@@ -89,7 +89,7 @@ $ docker run --it --init --rm \
 	--rtc-ip 0.0.0.0 \
 	--rtc-announce-ip <ANNOUNCE_IP> \
 	--signal-addr 0.0.0.0:8443 \
-	--control-addr 0.0.0.0:8443 \
+	--control-addr 0.0.0.0:9443 \
 ```
 
 ## Sample
