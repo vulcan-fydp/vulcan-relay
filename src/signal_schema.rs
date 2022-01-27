@@ -2,9 +2,7 @@ use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 
 use anyhow::anyhow;
-use async_graphql::{
-    scalar, Context, Enum, Guard, Object, Result, Schema, SimpleObject, Subscription, ID,
-};
+use async_graphql::{scalar, Context, Enum, Guard, Object, Result, Schema, Subscription};
 use mediasoup::transport::Transport;
 
 use crate::session::{Resource, Session, WeakSession};
@@ -201,16 +199,6 @@ impl SubscriptionRoot {
         let room = session.get_room();
         Ok(room.available_data_producers().map(DataProducerId))
     }
-
-    /// Notify when clients leave or join a room.
-    async fn client_state_available(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<impl Stream<Item = ClientStateUpdate>> {
-        let session = session_from_ctx(ctx)?;
-        let room = session.get_room();
-        Ok(room.client_state_updates().map(|x| x.into()))
-    }
 }
 
 struct ResourceGuard {
@@ -353,30 +341,4 @@ scalar!(DataConsumerOptions);
 pub enum ClientUpdate {
     Leave,
     Join,
-}
-
-impl From<crate::room::ClientUpdate> for ClientUpdate {
-    fn from(update: crate::room::ClientUpdate) -> Self {
-        match update {
-            crate::room::ClientUpdate::Join => Self::Join,
-            crate::room::ClientUpdate::Leave => Self::Leave,
-        }
-    }
-}
-
-#[derive(SimpleObject)]
-struct ClientStateUpdate {
-    update: ClientUpdate,
-    name: String,
-    session_id: ID,
-}
-
-impl From<crate::room::ClientStateUpdate> for ClientStateUpdate {
-    fn from(update: crate::room::ClientStateUpdate) -> Self {
-        ClientStateUpdate {
-            update: update.update.into(),
-            name: update.name,
-            session_id: update.session_id.into(),
-        }
-    }
 }

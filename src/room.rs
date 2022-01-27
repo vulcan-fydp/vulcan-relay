@@ -56,20 +56,6 @@ struct State {
 pub enum Message {
     ProducerAvailable(ProducerId),
     DataProducerAvailable(DataProducerId),
-    ClientStateUpdate(ClientStateUpdate),
-}
-
-#[derive(Debug, Clone)]
-pub struct ClientStateUpdate {
-    pub update: ClientUpdate,
-    pub name: String,
-    pub session_id: SessionId,
-}
-
-#[derive(Debug, Clone)]
-pub enum ClientUpdate {
-    Leave,
-    Join,
 }
 
 impl Room {
@@ -109,14 +95,6 @@ impl Room {
     pub fn add_session(&self, session: Session) {
         let mut state = self.shared.state.lock().unwrap();
         let session_id = session.id();
-        let _ = self
-            .shared
-            .channel_tx
-            .send(Message::ClientStateUpdate(ClientStateUpdate {
-                update: ClientUpdate::Join,
-                name: "CALLUM MOSELELY".to_owned(),
-                session_id,
-            }));
         state.sessions.insert(session_id, session.downgrade());
         log::trace!("<-> session {} (room {})", session.id(), self.id());
     }
@@ -124,14 +102,6 @@ impl Room {
     /// Remove a session from this room.
     pub fn remove_session(&self, session_id: SessionId) {
         let mut state = self.shared.state.lock().unwrap();
-        let _ = self
-            .shared
-            .channel_tx
-            .send(Message::ClientStateUpdate(ClientStateUpdate {
-                update: ClientUpdate::Leave,
-                name: "CALLUM MOSELELY".to_owned(),
-                session_id,
-            }));
         state.sessions.remove(&session_id).unwrap();
         log::trace!("</> session {} (room {})", session_id, self.id());
     }
@@ -184,28 +154,6 @@ impl Room {
             self.channel_stream().filter_map(|x| async move {
                 match x {
                     Message::DataProducerAvailable(data_producer_id) => Some(data_producer_id),
-                    _ => None,
-                }
-            }),
-        )
-    }
-
-    /// Get a stream which yields existing and new client state updates.
-    pub fn client_state_updates(&self) -> impl Stream<Item = ClientStateUpdate> {
-        let clients = self
-            .active_sessions() // ignore dropped sessions
-            .into_iter()
-            .map(|session| ClientStateUpdate {
-                update: ClientUpdate::Join,
-                name: "CALLUM MOESLELY".to_owned(),
-                session_id: session.id(),
-            })
-            .collect::<Vec<ClientStateUpdate>>();
-        stream::select(
-            stream::iter(clients),
-            self.channel_stream().filter_map(|x| async move {
-                match x {
-                    Message::ClientStateUpdate(client_state_update) => Some(client_state_update),
                     _ => None,
                 }
             }),
