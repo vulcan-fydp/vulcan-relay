@@ -19,6 +19,9 @@ declare global {
     class CanvasCaptureMediaStreamTrack extends MediaStreamTrack {
         requestFrame(): void;
     }
+    interface ChromeRTCRtpReceiver extends RTCRtpReceiver {
+        playoutDelayHint: number | null;
+    }
 }
 
 // please forgive me, this is the first thing i've ever written in typescript
@@ -343,17 +346,6 @@ async function session(role: Role, token: string) {
                 console.log(role, "connected recv transport");
                 success();
             });
-            // client state update subscription test
-            client.subscribe({
-                query: gql`
-                subscription {
-                    clientStateAvailable{update, name, sessionId}
-                }
-                `
-            }).subscribe((result: FetchResult<Record<string, any>>) => {
-                // callback is called when new producer is available
-                console.log(role, "CLIENT STATE UPDATE", result)
-            })
             return { sendTransport, recvTransport }
         });
 
@@ -408,6 +400,7 @@ async function session(role: Role, token: string) {
                         console.log(role, "consumed", response.data);
                         // use consumerOptions to connect to producer from relay
                         const consumer = await recvTransport.consume(response.data.consume);
+                        // (consumer.rtpReceiver as ChromeRTCRtpReceiver).playoutDelayHint = 0;
                         console.log(role, "consumer created", consumer);
 
                         // display media streams
