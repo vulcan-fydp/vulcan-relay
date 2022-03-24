@@ -603,7 +603,6 @@ impl Session {
         self.channel_stream().filter_map(|x| async move {
             match x {
                 Message::ResourceClosed(resource) => Some(resource),
-                _ => None,
             }
         })
     }

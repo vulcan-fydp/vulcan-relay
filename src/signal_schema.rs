@@ -2,7 +2,7 @@ use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 
 use anyhow::anyhow;
-use async_graphql::{scalar, Context, Enum, Guard, Object, Result, Schema, Subscription};
+use async_graphql::{scalar, Context, Guard, Object, Result, Schema, Subscription};
 use mediasoup::transport::Transport;
 
 use crate::session::{Resource, ResourceType, Session, WeakSession};
