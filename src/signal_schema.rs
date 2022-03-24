@@ -5,7 +5,7 @@ use anyhow::anyhow;
 use async_graphql::{scalar, Context, Enum, Guard, Object, Result, Schema, Subscription};
 use mediasoup::transport::Transport;
 
-use crate::session::{Resource, Session, WeakSession};
+use crate::session::{Resource, ResourceType, Session, WeakSession};
 
 fn session_from_ctx(ctx: &Context<'_>) -> Result<Session, anyhow::Error> {
     ctx.data_opt::<WeakSession>()
@@ -41,7 +41,7 @@ impl MutationRoot {
     }
 
     /// WebRTC transport parameters.
-    #[graphql(guard = "ResourceGuard::new(Resource::WebrtcTransport, 2, 1)")]
+    #[graphql(guard = "ResourceGuard::new(ResourceType::WebrtcTransport, 2, 1)")]
     async fn create_webrtc_transport(&self, ctx: &Context<'_>) -> Result<WebRtcTransportOptions> {
         let session = session_from_ctx(ctx)?;
         let transport = session.create_webrtc_transport().await;
@@ -54,7 +54,7 @@ impl MutationRoot {
         })
     }
     /// Plain receive transport connection parameters.
-    #[graphql(guard = "ResourceGuard::new(Resource::PlainTransport, 2, 1)")]
+    #[graphql(guard = "ResourceGuard::new(ResourceType::PlainTransport, 2, 1)")]
     async fn create_plain_transport(&self, ctx: &Context<'_>) -> Result<PlainTransportOptions> {
         let session = session_from_ctx(ctx)?;
         let plain_transport = session.create_plain_transport().await;
@@ -80,7 +80,7 @@ impl MutationRoot {
     }
 
     /// Request consumption of media stream.
-    #[graphql(guard = "ResourceGuard::new(Resource::Consumer, 2, 1)")]
+    #[graphql(guard = "ResourceGuard::new(ResourceType::Consumer, 2, 1)")]
     async fn consume(
         &self,
         ctx: &Context<'_>,
@@ -105,7 +105,7 @@ impl MutationRoot {
     }
 
     /// Request production of media stream.
-    #[graphql(guard = "ResourceGuard::new(Resource::Producer, 2, 1)")]
+    #[graphql(guard = "ResourceGuard::new(ResourceType::Producer, 2, 1)")]
     async fn produce(
         &self,
         ctx: &Context<'_>,
@@ -123,7 +123,7 @@ impl MutationRoot {
     }
 
     /// Request production of a media stream on plain transport.
-    #[graphql(guard = "ResourceGuard::new(Resource::Producer, 2, 1)")]
+    #[graphql(guard = "ResourceGuard::new(ResourceType::Producer, 2, 1)")]
     async fn produce_plain(
         &self,
         ctx: &Context<'_>,
@@ -141,7 +141,7 @@ impl MutationRoot {
     }
 
     /// Request consumption of data stream.
-    #[graphql(guard = "ResourceGuard::new(Resource::DataConsumer, 128, 1)")]
+    #[graphql(guard = "ResourceGuard::new(ResourceType::DataConsumer, 128, 1)")]
     async fn consume_data(
         &self,
         ctx: &Context<'_>,
@@ -160,7 +160,7 @@ impl MutationRoot {
     }
 
     /// Request production of data stream.
-    #[graphql(guard = "ResourceGuard::new(Resource::DataProducer, 2, 1)")]
+    #[graphql(guard = "ResourceGuard::new(ResourceType::DataProducer, 2, 1)")]
     async fn produce_data(
         &self,
         ctx: &Context<'_>,
@@ -199,18 +199,90 @@ impl SubscriptionRoot {
         let room = session.get_room();
         Ok(room.available_data_producers().map(DataProducerId))
     }
+    /// Notify when client-side transport should close.
+    async fn transport_closed(&self, ctx: &Context<'_>) -> Result<impl Stream<Item = TransportId>> {
+        let session = session_from_ctx(ctx)?;
+        Ok(session
+            .closed_resources()
+            .filter_map(|x| async move {
+                match x {
+                    Resource::WebrtcTransport(id) => Some(id),
+                    Resource::PlainTransport(id) => Some(id),
+                    _ => None,
+                }
+            })
+            .map(TransportId))
+    }
+    /// Notify when client-side producer should close.
+    async fn producer_closed(&self, ctx: &Context<'_>) -> Result<impl Stream<Item = ProducerId>> {
+        let session = session_from_ctx(ctx)?;
+        Ok(session
+            .closed_resources()
+            .filter_map(|x| async move {
+                match x {
+                    Resource::Producer(id) => Some(id),
+                    _ => None,
+                }
+            })
+            .map(ProducerId))
+    }
+    /// Notify when client-side consumer should close.
+    async fn consumer_closed(&self, ctx: &Context<'_>) -> Result<impl Stream<Item = ConsumerId>> {
+        let session = session_from_ctx(ctx)?;
+        Ok(session
+            .closed_resources()
+            .filter_map(|x| async move {
+                match x {
+                    Resource::Consumer(id) => Some(id),
+                    _ => None,
+                }
+            })
+            .map(ConsumerId))
+    }
+    /// Notify when client-side data producer should close.
+    async fn data_producer_closed(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<impl Stream<Item = DataProducerId>> {
+        let session = session_from_ctx(ctx)?;
+        Ok(session
+            .closed_resources()
+            .filter_map(|x| async move {
+                match x {
+                    Resource::DataProducer(id) => Some(id),
+                    _ => None,
+                }
+            })
+            .map(DataProducerId))
+    }
+    /// Notify when client-side data consumer should close.
+    async fn data_consumer_closed(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<impl Stream<Item = DataConsumerId>> {
+        let session = session_from_ctx(ctx)?;
+        Ok(session
+            .closed_resources()
+            .filter_map(|x| async move {
+                match x {
+                    Resource::DataConsumer(id) => Some(id),
+                    _ => None,
+                }
+            })
+            .map(DataConsumerId))
+    }
 }
 
 struct ResourceGuard {
     /// Name of resource to enforce limits for.
-    resource: Resource,
+    resource: ResourceType,
     /// Expected count of this resource allocated as a result of this operation.
     expected: usize,
     /// Maximum allowable count of this resource.
     limit: usize,
 }
 impl ResourceGuard {
-    fn new(resource: Resource, limit: usize, expected: usize) -> Self {
+    fn new(resource: ResourceType, limit: usize, expected: usize) -> Self {
         ResourceGuard {
             resource,
             limit,
@@ -262,6 +334,11 @@ scalar!(ProducerId);
 #[serde(transparent)]
 struct DataProducerId(mediasoup::data_producer::DataProducerId);
 scalar!(DataProducerId);
+
+#[derive(Deserialize, Serialize, Clone, Copy)]
+#[serde(transparent)]
+struct DataConsumerId(mediasoup::data_consumer::DataConsumerId);
+scalar!(DataConsumerId);
 
 #[derive(Deserialize, Serialize, Clone)]
 #[serde(transparent)]
@@ -336,9 +413,3 @@ struct DataConsumerOptions {
     sctp_stream_parameters: mediasoup::sctp_parameters::SctpStreamParameters,
 }
 scalar!(DataConsumerOptions);
-
-#[derive(Enum, Copy, Clone, Eq, PartialEq)]
-pub enum ClientUpdate {
-    Leave,
-    Join,
-}

@@ -1,8 +1,10 @@
-use futures::{stream, StreamExt};
+use futures::{future, stream, Stream, StreamExt};
 use mediasoup::producer::ProducerTraceEventType;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
+use tokio::sync::broadcast;
+use tokio_stream::wrappers::BroadcastStream;
 use uuid::Uuid;
 
 use anyhow::{anyhow, Result};
@@ -53,6 +55,7 @@ struct Shared {
 
     session_options: SessionOptions,
     transport_listen_ip: TransportListenIp,
+    channel_tx: broadcast::Sender<Message>,
 }
 impl PartialEq for Shared {
     fn eq(&self, other: &Self) -> bool {
@@ -60,6 +63,11 @@ impl PartialEq for Shared {
     }
 }
 impl Eq for Shared {}
+
+#[derive(Debug, Clone)]
+enum Message {
+    ResourceClosed(Resource),
+}
 
 #[derive(Debug)]
 struct State {
@@ -95,6 +103,7 @@ impl Session {
                 room: room.clone(),
                 session_options,
                 transport_listen_ip,
+                channel_tx: broadcast::channel(16).0,
             }),
         };
         room.add_session(session.clone());
@@ -137,6 +146,26 @@ impl Session {
         options.paused = true;
 
         let consumer = transport.consume(options).await?;
+        consumer
+            .on_transport_close({
+                let channel_tx = self.shared.channel_tx.clone();
+                let consumer_id = consumer.id();
+                Box::new(move || {
+                    let _ =
+                        channel_tx.send(Message::ResourceClosed(Resource::Consumer(consumer_id)));
+                })
+            })
+            .detach();
+        consumer
+            .on_producer_close({
+                let channel_tx = self.shared.channel_tx.clone();
+                let consumer_id = consumer.id();
+                Box::new(move || {
+                    let _ =
+                        channel_tx.send(Message::ResourceClosed(Resource::Consumer(consumer_id)));
+                })
+            })
+            .detach();
 
         log::trace!("+consumer {} (session {})", consumer.id(), self.id());
         self.add_consumer(consumer.clone());
@@ -164,6 +193,16 @@ impl Session {
         let producer = transport
             .produce(ProducerOptions::new(kind, rtp_parameters))
             .await?;
+        producer
+            .on_transport_close({
+                let channel_tx = self.shared.channel_tx.clone();
+                let producer_id = producer.id();
+                Box::new(move || {
+                    let _ =
+                        channel_tx.send(Message::ResourceClosed(Resource::Producer(producer_id)));
+                })
+            })
+            .detach();
         self.add_producer(producer.clone());
 
         log::trace!("+producer {} (session {})", producer.id(), self.id());
@@ -207,6 +246,28 @@ impl Session {
         let options = DataConsumerOptions::new_sctp(data_producer_id);
 
         let data_consumer = transport.consume_data(options).await?;
+        data_consumer
+            .on_transport_close({
+                let channel_tx = self.shared.channel_tx.clone();
+                let data_consumer_id = data_consumer.id();
+                Box::new(move || {
+                    let _ = channel_tx.send(Message::ResourceClosed(Resource::DataConsumer(
+                        data_consumer_id,
+                    )));
+                })
+            })
+            .detach();
+        data_consumer
+            .on_data_producer_close({
+                let channel_tx = self.shared.channel_tx.clone();
+                let data_consumer_id = data_consumer.id();
+                Box::new(move || {
+                    let _ = channel_tx.send(Message::ResourceClosed(Resource::DataConsumer(
+                        data_consumer_id,
+                    )));
+                })
+            })
+            .detach();
 
         log::trace!(
             "+data consumer {} (session {})",
@@ -229,6 +290,17 @@ impl Session {
         let data_producer = transport
             .produce_data(DataProducerOptions::new_sctp(sctp_stream_parameters))
             .await?;
+        data_producer
+            .on_transport_close({
+                let channel_tx = self.shared.channel_tx.clone();
+                let data_producer_id = data_producer.id();
+                Box::new(move || {
+                    let _ = channel_tx.send(Message::ResourceClosed(Resource::DataProducer(
+                        data_producer_id,
+                    )));
+                })
+            })
+            .detach();
 
         self.add_data_producer(data_producer.clone());
 
@@ -341,6 +413,17 @@ impl Session {
             .create_webrtc_transport(transport_options)
             .await
             .unwrap();
+        transport
+            .on_router_close({
+                let channel_tx = self.shared.channel_tx.clone();
+                let transport_id = transport.id();
+                Box::new(move || {
+                    let _ = channel_tx.send(Message::ResourceClosed(Resource::WebrtcTransport(
+                        transport_id,
+                    )));
+                })
+            })
+            .detach();
         let mut state = self.shared.state.lock().unwrap();
         state
             .webrtc_transports
@@ -472,27 +555,27 @@ impl Session {
     }
 
     /// Get the count of a limited resource.
-    pub fn get_resource_count(&self, resource: &Resource) -> usize {
+    pub fn get_resource_count(&self, resource: &ResourceType) -> usize {
         let state = self.shared.state.lock().unwrap();
         match resource {
-            Resource::Consumer => state.consumers.values().filter(|x| !x.closed()).count(),
-            Resource::Producer => state.producers.values().filter(|x| !x.closed()).count(),
-            Resource::DataConsumer => state
+            ResourceType::Consumer => state.consumers.values().filter(|x| !x.closed()).count(),
+            ResourceType::Producer => state.producers.values().filter(|x| !x.closed()).count(),
+            ResourceType::DataConsumer => state
                 .data_consumers
                 .values()
                 .filter(|x| !x.closed())
                 .count(),
-            Resource::DataProducer => state
+            ResourceType::DataProducer => state
                 .data_producers
                 .values()
                 .filter(|x| !x.closed())
                 .count(),
-            Resource::WebrtcTransport => state
+            ResourceType::WebrtcTransport => state
                 .webrtc_transports
                 .values()
                 .filter(|x| !x.closed())
                 .count(),
-            Resource::PlainTransport => state
+            ResourceType::PlainTransport => state
                 .plain_transports
                 .values()
                 .filter(|x| !x.closed())
@@ -514,6 +597,21 @@ impl Session {
             })
             .detach();
         producer.enable_trace_event(events).await.unwrap();
+    }
+
+    pub fn closed_resources(&self) -> impl Stream<Item = Resource> {
+        self.channel_stream().filter_map(|x| async move {
+            match x {
+                Message::ResourceClosed(resource) => Some(resource),
+                _ => None,
+            }
+        })
+    }
+
+    fn channel_stream(&self) -> impl Stream<Item = Message> {
+        BroadcastStream::new(self.shared.channel_tx.subscribe())
+            .take_while(|x| future::ready(x.is_ok()))
+            .map(|x| x.unwrap())
     }
 }
 impl WeakSession {
@@ -540,11 +638,21 @@ pub struct Stats {
 }
 
 #[derive(Debug, Clone, Display)]
-pub enum Resource {
+pub enum ResourceType {
     Consumer,
     Producer,
     DataConsumer,
     DataProducer,
     WebrtcTransport,
     PlainTransport,
+}
+
+#[derive(Debug, Clone, Display)]
+pub enum Resource {
+    Consumer(ConsumerId),
+    Producer(ProducerId),
+    DataConsumer(DataConsumerId),
+    DataProducer(DataProducerId),
+    WebrtcTransport(TransportId),
+    PlainTransport(TransportId),
 }
